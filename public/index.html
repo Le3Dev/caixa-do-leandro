@@ -726,7 +726,10 @@
     .login-box { width: 100%; max-width: 22rem; display: flex; flex-direction: column; gap: 14px; }
     .login-box h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.7rem; margin: 0; }
     .login-box .splitbar { height: 12px; }
-    .login-box p { margin: 0; color: var(--muted); font-size: .9rem; }`;
+    .login-box p { margin: 0; color: var(--muted); font-size: .9rem; }
+    .aviso-servidor { position: fixed; z-index: 60; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+      top: calc(12px + env(safe-area-inset-top, 0px)); max-width: 30rem; margin: 0 auto; background: var(--surface); color: var(--ink);
+      border: 1px solid var(--danger); border-radius: var(--radius); padding: 12px 14px; font-size: .9rem; line-height: 1.4; }`;
   document.head.appendChild(css);
 
   function mostrarLogin() {
@@ -750,7 +753,8 @@
         const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ senha: document.getElementById('login-senha').value }) });
         if (!r.ok) throw new Error('senha');
         el.remove();
-        await carregar();
+        tentativas = 0;
+        primeira();
       } catch (e) {
         erro.textContent = e && e.message === 'senha' ? 'Senha errada. Tente de novo.' : 'Não consegui entrar. Confira a internet.';
         erro.hidden = false;
@@ -761,6 +765,13 @@
     document.getElementById('login-entrar').addEventListener('click', entrar);
     document.getElementById('login-senha').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') entrar(); });
     setTimeout(() => document.getElementById('login-senha').focus(), 50);
+  }
+
+  function aviso(texto) {
+    let el = document.getElementById('aviso-servidor');
+    if (!texto) { if (el) el.remove(); return; }
+    if (!el) { el = document.createElement('div'); el.id = 'aviso-servidor'; el.className = 'aviso-servidor'; el.setAttribute('role', 'alert'); document.body.appendChild(el); }
+    el.textContent = texto;
   }
 
   async function api(url, opcoes) {
@@ -794,6 +805,7 @@
   async function carregar() {
     const j = await api('/api/estado');
     cols = j.cols || {};
+    aviso('');
     resolverPronto();
     avisar();
     mercadoSeVelho();
@@ -924,7 +936,10 @@
   let tentativas = 0;
   const primeira = () => carregar().catch((e) => {
     if (e && e.code === 'unauthenticated') return; // a tela de senha já apareceu
+    const servidor = e && /^servidor/.test(e.message || '');
+    if (tentativas >= 1) aviso(servidor ? 'O servidor não conseguiu abrir seus dados. Tentando de novo…' : 'Sem internet. Tentando de novo…');
     if (++tentativas < 20) setTimeout(primeira, 3000);
+    else aviso('Não consegui abrir seus dados. Feche e abra o app mais tarde.');
   });
   primeira();
 })();
