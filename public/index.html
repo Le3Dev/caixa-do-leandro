@@ -28,10 +28,15 @@
 <link rel="apple-touch-startup-image" href="/splash/750x1334.png" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)">
 <style>
   html { background: #0C1210; color-scheme: dark; }
-  .splash { position: fixed; inset: 0; z-index: 100; background: #0C1210; display: flex; align-items: center; justify-content: center; transition: opacity .3s ease; }
+  .splash { position: fixed; inset: 0; z-index: 100; background: #0C1210; display: flex; align-items: center; justify-content: center; }
   .splash svg { width: 64px; height: 64px; display: block; }
   .splash.sai { opacity: 0; pointer-events: none; }
-  @media (prefers-reduced-motion: reduce) { .splash { transition: none; } }
+  @media (prefers-reduced-motion: no-preference) {
+    .splash { transition: opacity .5s ease; }
+    .splash svg { animation: respira 2.4s ease-in-out .5s infinite; }
+    .splash.sai svg { animation: none; transform: scale(1.12); transition: transform .55s cubic-bezier(.22, 1, .36, 1); }
+    @keyframes respira { 50% { transform: scale(1.035); } }
+  }
   :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); -webkit-text-size-adjust: 100%; }
   body { margin: 0; }
   img { max-width: 100%; }
@@ -374,8 +379,25 @@
     padding: 12px 16px; border-radius: 12px; font-weight: 500;
     box-shadow: 0 8px 24px rgb(0 0 0 / .22); z-index: 10;
   }
+  /* Movimento: uma curva só, que desacelera devagar e não quica. */
+  :root { --ease: cubic-bezier(.22, 1, .36, 1); }
+  html { -webkit-tap-highlight-color: transparent; }
+  .tabs { position: relative; }
+  .tabs .tab { z-index: 1; }
+  .tab-ind { position: absolute; top: 4px; left: 0; height: calc(100% - 8px); border-radius: 999px; background: var(--surface); box-shadow: 0 1px 3px rgb(0 0 0 / .3); pointer-events: none; }
+  .tabs.com-ind .tab[aria-selected="true"] { background: transparent; box-shadow: none; }
   @media (prefers-reduced-motion: no-preference) {
-    .meter i, .splitbar i { transition: flex-grow .3s ease, width .3s ease; }
+    .meter i, .splitbar i { transition: flex-grow .5s var(--ease), width .5s var(--ease); }
+    .tab-ind.anda { transition: transform .5s var(--ease), width .5s var(--ease); }
+    .tab { transition: color .3s ease; }
+    .pill, .seg button, .btn-ghost, .iconbtn, .link, .chip { transition: background-color .25s ease, border-color .25s ease, color .25s ease, transform .18s var(--ease); }
+    .btn-primary { transition: transform .18s var(--ease), opacity .25s ease; }
+    .input, .field > input, .field > select { transition: border-color .25s ease; }
+    .btn-primary:active:not(:disabled), .btn-ghost:active, .pill:active, .seg button:active, .iconbtn:active { transform: scale(.97); }
+    .toast:not([hidden]) { animation: toast-in .45s var(--ease) both; }
+    .toast.sai { animation: toast-out .22s ease both; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(16px) scale(.98); } }
+    @keyframes toast-out { to { opacity: 0; transform: translateY(8px); } }
   }
 </style>
 
@@ -746,22 +768,34 @@
     .login-box h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.7rem; margin: 0; }
     .login-box .splitbar { height: 12px; }
     .login-box p { margin: 0; color: var(--muted); font-size: .9rem; }
+    @media (prefers-reduced-motion: no-preference) {
+      .login { animation: login-fundo .5s ease both; }
+      .login-box { animation: login-sobe .7s var(--ease) .08s both; }
+      .login.sai { animation: none; opacity: 0; transition: opacity .32s ease; }
+      .login.sai .login-box { animation: none; transform: translateY(-6px); transition: transform .32s var(--ease); }
+      .aviso-servidor { animation: toast-in .45s var(--ease) both; }
+      @keyframes login-fundo { from { opacity: 0; } }
+      @keyframes login-sobe { from { opacity: 0; transform: translateY(12px); } }
+    }
     .aviso-servidor { position: fixed; z-index: 60; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
       top: calc(12px + env(safe-area-inset-top, 0px)); max-width: 30rem; margin: 0 auto; background: var(--surface); color: var(--ink);
       border: 1px solid var(--danger); border-radius: var(--radius); padding: 12px 14px; font-size: .9rem; line-height: 1.4; }`;
   document.head.appendChild(css);
 
   /* Abertura com a marca: fica pelo menos meio segundo e some quando a tela está pronta. */
+  // Com dados, espera a tela terminar de se montar; aí a abertura sai e o app entra junto.
   let saiuSplash = false;
-  function tirarSplash() {
-    if (saiuSplash) return;
-    saiuSplash = true;
+  function tirarSplash(comDados) {
     const el = document.getElementById('splash');
-    if (!el) return;
-    setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => {
-      el.classList.add('sai');
-      setTimeout(() => el.remove(), 350);
-    })), Math.max(0, 500 - performance.now()));
+    const login = document.getElementById('login');
+    const sair = () => {
+      if (el && el.isConnected) { el.classList.add('sai'); setTimeout(() => el.remove(), 600); }
+      if (comDados && login && login.isConnected) { login.classList.add('sai'); setTimeout(() => login.remove(), 340); }
+    };
+    const revelar = (antes) => { if (window.caixaMov) window.caixaMov.revelar(antes); else if (antes) antes(); };
+    if (saiuSplash) { if (comDados) revelar(sair); return; }
+    saiuSplash = true;
+    setTimeout(() => requestAnimationFrame(() => { if (comDados) revelar(sair); else sair(); }), Math.max(0, 600 - performance.now()));
   }
 
   function mostrarLogin() {
@@ -785,14 +819,16 @@
       try {
         const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ senha: document.getElementById('login-senha').value }) });
         if (!r.ok) throw new Error('senha');
-        el.remove();
+        // a tela de senha só sai quando os dados chegarem, junto com a entrada do app
+        btn.textContent = 'Entrando…';
+        btn.dataset.entrando = '1';
         tentativas = 0;
         primeira();
       } catch (e) {
         erro.textContent = e && e.message === 'senha' ? 'Senha errada. Tente de novo.' : 'Não consegui entrar. Confira a internet.';
         erro.hidden = false;
       } finally {
-        btn.disabled = false;
+        if (!btn.dataset.entrando) btn.disabled = false;
       }
     };
     document.getElementById('login-entrar').addEventListener('click', entrar);
@@ -842,7 +878,7 @@
     aviso('');
     resolverPronto();
     avisar();
-    tirarSplash();
+    tirarSplash(true);
     mercadoSeVelho();
     return j;
   }
@@ -977,6 +1013,303 @@
     else aviso('Não consegui abrir seus dados. Feche e abra o app mais tarde.');
   });
   primeira();
+})();
+</script>
+
+<script>
+/* Movimento. Um momento só quando o app abre: os valores contam até o saldo, a rosca se completa
+   e as barras enchem. Depois disso, as coisas só se mexem para mostrar o que você mudou. */
+(() => {
+  const EASE = 'cubic-bezier(.22, 1, .36, 1)';
+  const DESENHO = 'cubic-bezier(.65, 0, .35, 1)';
+  let calmo = false;
+  try { calmo = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { calmo = false; }
+  const app = document.querySelector('.app');
+  const tabs = document.querySelector('.tabs');
+  const ORDEM = ['mes', 'mim', 'patrimonio', 'ajustes'];
+
+  let revelado = false;   // só anima depois que a abertura saiu
+  let quieto = null;      // enquanto espera a tela parar de mudar para revelar
+  let atraso = 0;         // atraso extra da próxima varredura (entrada e troca de aba)
+  let silencio = false;   // na próxima varredura, linhas e formulários novos não animam
+  const reg = new Map();
+  const linhasVistas = new Set();
+  const formsAbertos = new WeakMap();
+  const contando = new WeakSet();
+
+  /* A tela é redesenhada a cada atualização dos dados. Se o HTML novo é igual ao que já está lá,
+     não troca nada: a animação em andamento continua e nada pisca. Onde há campos de formulário,
+     troca sempre, como antes. */
+  if (!calmo) {
+    const orig = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+    Object.defineProperty(Element.prototype, 'innerHTML', {
+      configurable: true,
+      enumerable: orig.enumerable,
+      get() { return orig.get.call(this); },
+      set(v) {
+        const html = String(v);
+        if (this.__html === html && this.isConnected && app.contains(this) && !this.matches('select') && !this.querySelector('input, select, textarea')) return;
+        this.__html = html;
+        orig.set.call(this, html);
+      },
+    });
+  }
+
+  const visivel = (el) => el.isConnected && el.getClientRects().length > 0;
+  const anima =(el, quadros, opcoes) => { try { return el.animate(quadros, opcoes); } catch (e) { return null; } };
+  function chave(el, sel) {
+    const dono = el.parentElement ? el.parentElement.closest('[id]') : null;
+    const lista = dono ? Array.from(dono.querySelectorAll(sel)) : [];
+    return (dono ? dono.id : '?') + '|' + sel + '|' + lista.indexOf(el);
+  }
+
+  /* ---------- aba ativa: a pílula desliza até a aba escolhida ---------- */
+  const ind = document.createElement('span');
+  ind.className = 'tab-ind';
+  ind.setAttribute('aria-hidden', 'true');
+  tabs.prepend(ind);
+  tabs.classList.add('com-ind');
+  function posicionar(andar) {
+    const sel = tabs.querySelector('.tab[aria-selected="true"]');
+    if (!sel) return;
+    ind.classList.toggle('anda', !!andar && !calmo);
+    ind.style.width = sel.offsetWidth + 'px';
+    ind.style.transform = 'translateX(' + sel.offsetLeft + 'px)';
+  }
+  window.addEventListener('resize', () => posicionar(false));
+
+  /* ---------- números que contam ---------- */
+  const NUM = /^(\s*[^0-9]*?)(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?)([^0-9]*)$/;
+  const fmts = {};
+  const fmt = (v, dec) => (fmts[dec] = fmts[dec] || new Intl.NumberFormat('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec })).format(v);
+  function lerNum(txt) {
+    const m = NUM.exec(txt);
+    if (!m) return null;
+    return { pre: m[1], v: Number(m[2].replace(/\./g, '').replace(',', '.')), dec: (m[2].split(',')[1] || '').length, suf: m[3] };
+  }
+  function contar(el, de, p, dur, espera) {
+    const final = el.textContent;
+    contando.add(el);
+    el.textContent = p.pre + fmt(de, p.dec) + p.suf;
+    const t0 = performance.now() + espera;
+    const passo = (agora) => {
+      if (!el.isConnected) { contando.delete(el); return; }
+      const t = Math.min(1, Math.max(0, (agora - t0) / dur));
+      const k = 1 - Math.pow(1 - t, 4);
+      el.textContent = t >= 1 ? final : p.pre + fmt(de + (p.v - de) * k, p.dec) + p.suf;
+      if (t < 1) requestAnimationFrame(passo);
+      else contando.delete(el);
+    };
+    requestAnimationFrame(passo);
+  }
+  function numeros() {
+    ['.big', '.plano-top .amt', '.donut .c-total'].forEach((sel) => {
+      app.querySelectorAll(sel).forEach((el) => {
+        if (contando.has(el) || el.children.length) return;
+        const p = lerNum(el.textContent);
+        if (!p) return;
+        const k = chave(el, sel);
+        const r = reg.get(k);
+        if (!revelado || !visivel(el)) { if (!r) reg.set(k, { v: p.v, pre: p.pre, visto: false }); return; }
+        if (!r || !r.visto) {
+          reg.set(k, { v: p.v, pre: p.pre, visto: true });
+          if (p.v) contar(el, 0, p, 1200, atraso);
+          return;
+        }
+        if (r.v !== p.v) {
+          const mesmoSinal = r.pre === p.pre;
+          const de = r.v;
+          r.v = p.v; r.pre = p.pre;
+          if (mesmoSinal) contar(el, de, p, 750, 0);
+        }
+      });
+    });
+  }
+
+  /* ---------- barras: enchem da esquerda na primeira vez e escorregam quando mudam ---------- */
+  function barras() {
+    const sel = '.splitbar, .meter, .cmp-bar';
+    app.querySelectorAll(sel).forEach((el) => {
+      if (el.closest('.form, .preview')) return;
+      const k = chave(el, sel);
+      const filhos = Array.from(el.children);
+      const vals = filhos.map((c) => c.style.flexGrow || c.style.width || '');
+      const sig = vals.join('|');
+      const r = reg.get(k);
+      if (!revelado || !visivel(el)) { if (!r) reg.set(k, { sig, vals, visto: false }); return; }
+      if (!r || !r.visto) {
+        reg.set(k, { sig, vals, visto: true });
+        anima(el, [{ clipPath: 'inset(0 100% 0 0 round 999px)' }, { clipPath: 'inset(0 0% 0 0 round 999px)' }], { duration: 1000, delay: atraso + 150, easing: EASE, fill: 'backwards' });
+        return;
+      }
+      if (r.sig !== sig) {
+        if (r.vals.length === vals.length) {
+          filhos.forEach((c, i) => {
+            if (!r.vals[i] || r.vals[i] === vals[i]) return;
+            const prop = c.style.flexGrow ? 'flexGrow' : 'width';
+            anima(c, [{ [prop]: r.vals[i] }, { [prop]: vals[i] }], { duration: 700, easing: EASE });
+          });
+        }
+        r.sig = sig; r.vals = vals;
+      }
+    });
+  }
+
+  /* ---------- rosca: varre o círculo na primeira vez; depois cada fatia escorrega ---------- */
+  const px = (s) => String(s || '0').trim().split(/[\s,]+/).map((n) => n + 'px').join(' ');
+  function rosca() {
+    const svg = app.querySelector('.donut');
+    if (!svg) return;
+    const arcos = Array.from(svg.querySelectorAll('circle[data-k]'));
+    const atual = arcos.map((a) => [a.dataset.k, a.getAttribute('stroke-dasharray'), a.getAttribute('stroke-dashoffset')]);
+    const sig = JSON.stringify(atual);
+    const r = reg.get('rosca');
+    if (!revelado || !visivel(svg)) { if (!r) reg.set('rosca', { sig, atual, visto: false }); return; }
+    if (!r || !r.visto) {
+      reg.set('rosca', { sig, atual, visto: true });
+      const m = svg.querySelector('.varredura');
+      if (m) anima(m, [{ strokeDashoffset: m.dataset.c + 'px' }, { strokeDashoffset: '0px' }], { duration: 1300, delay: atraso + 100, easing: DESENHO, fill: 'backwards' });
+      return;
+    }
+    if (r.sig === sig) return;
+    const antes = new Map(r.atual.map((x) => [x[0], x]));
+    arcos.forEach((a) => {
+      const v = antes.get(a.dataset.k);
+      const de = v ? [v[1], v[2]] : ['0 ' + a.dataset.c, a.getAttribute('stroke-dashoffset')];
+      anima(a, [
+        { strokeDasharray: px(de[0]), strokeDashoffset: px(de[1]) },
+        { strokeDasharray: px(a.getAttribute('stroke-dasharray')), strokeDashoffset: px(a.getAttribute('stroke-dashoffset')) },
+      ], { duration: 800, easing: EASE });
+    });
+    r.sig = sig; r.atual = atual;
+  }
+
+  /* ---------- gráficos de linha: a linha se desenha da esquerda para a direita ---------- */
+  function desenhar(svg, espera, dur) {
+    svg.querySelectorAll('path').forEach((p) => {
+      const tracejada = p.hasAttribute('stroke-dasharray');
+      if (p.getAttribute('fill') === 'none' && !tracejada) {
+        p.setAttribute('pathLength', '1');
+        p.setAttribute('stroke-dasharray', '1 1');
+        const a = anima(p, [{ strokeDashoffset: '1px' }, { strokeDashoffset: '0px' }], { duration: dur, delay: espera, easing: DESENHO, fill: 'backwards' });
+        const limpar = () => { p.removeAttribute('pathLength'); p.removeAttribute('stroke-dasharray'); };
+        if (a) { a.onfinish = limpar; a.oncancel = limpar; } else limpar();
+      } else if (tracejada) {
+        anima(p, [{ opacity: 0 }, { opacity: 1 }], { duration: dur * 0.6, delay: espera + dur * 0.2, easing: 'ease', fill: 'backwards' });
+      } else {
+        anima(p, [{ opacity: 0 }, { opacity: 1 }], { duration: dur * 0.7, delay: espera + dur * 0.35, easing: 'ease', fill: 'backwards' });
+      }
+    });
+    svg.querySelectorAll('line[stroke-dasharray], circle, .lbl-strong, text[fill="var(--mine)"]').forEach((el) => {
+      anima(el, [{ opacity: 0 }, { opacity: 1 }], { duration: 450, delay: espera + dur * 0.65, easing: 'ease', fill: 'backwards' });
+    });
+  }
+  function graficos() {
+    app.querySelectorAll('.chart').forEach((box) => {
+      const svg = box.querySelector('svg');
+      if (!svg) return;
+      const k = 'graf|' + box.id;
+      const sig = svg.getAttribute('viewBox') + Array.from(svg.querySelectorAll('path')).map((p) => p.getAttribute('d')).join(';');
+      const r = reg.get(k);
+      if (!revelado || !visivel(svg)) { if (!r) reg.set(k, { sig, visto: false }); return; }
+      if (r && r.visto && r.sig === sig) return;
+      const primeira = !r || !r.visto;
+      reg.set(k, { sig, visto: true });
+      desenhar(svg, primeira ? atraso + 180 : 0, primeira ? 1400 : 900);
+    });
+  }
+
+  /* ---------- linha nova numa lista: aparece no lugar ---------- */
+  function linhas() {
+    app.querySelectorAll('[data-id], [data-rv], [data-mov], [data-ap]').forEach((el) => {
+      const k = ['id', 'rv', 'mov', 'ap'].map((a) => (el.dataset[a] ? a + ':' + el.dataset[a] : '')).join('');
+      if (linhasVistas.has(k)) return;
+      linhasVistas.add(k);
+      if (!revelado || silencio || !visivel(el)) return;
+      const alvo = el.matches('button') ? el.closest('.ext, .row') || el : el;
+      anima(alvo, [{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 520, easing: EASE });
+    });
+  }
+
+  /* ---------- formulário que abre ---------- */
+  function formularios() {
+    app.querySelectorAll('.card.form, .distribuir').forEach((el) => {
+      const aberto = visivel(el);
+      const antes = formsAbertos.get(el);
+      formsAbertos.set(el, aberto);
+      if (aberto && antes === false && revelado && !silencio) {
+        anima(el, [{ opacity: 0, transform: 'translateY(10px) scale(.985)' }, { opacity: 1, transform: 'none' }], { duration: 480, easing: EASE });
+      }
+    });
+  }
+
+  function varrer() {
+    numeros(); barras(); rosca(); graficos(); linhas(); formularios();
+    atraso = 0;
+    silencio = false;
+  }
+  let agendado = false;
+  function agendar() {
+    if (agendado) return;
+    agendado = true;
+    requestAnimationFrame(() => { agendado = false; varrer(); });
+  }
+
+  if (!calmo) {
+    new MutationObserver((recs) => {
+      if (recs.every((r) => contando.has(r.target))) return;
+      if (quieto) quieto();
+      agendar();
+    }).observe(app, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  }
+
+  /* O app entra: cabeçalho e aba atual sobem de leve, os valores contam, a rosca e as barras se completam. */
+  function revelar() {
+    if (revelado) return;
+    revelado = true;
+    posicionar(false);
+    if (calmo) return;
+    const painel = app.querySelector('section.panel:not([hidden])');
+    [app.querySelector('.top'), painel].forEach((el, i) => {
+      if (el) anima(el, [{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'none' }], { duration: 800, delay: i * 80, easing: EASE, fill: 'backwards' });
+    });
+    atraso = 160;
+    silencio = true;
+    varrer();
+  }
+
+  window.caixaMov = {
+    /* Chamado quando os dados chegaram. Eles chegam em várias partes, então espera a tela ficar
+       120 ms sem mudar (no máximo 1,2 s), roda antes() (tirar a abertura) e revela. */
+    revelar(antes) {
+      if (revelado || quieto) { if (antes) antes(); return; }
+      const limite = Date.now() + 1200;
+      let t = null;
+      const entrar = () => { quieto = null; if (antes) antes(); revelar(); };
+      quieto = () => { clearTimeout(t); t = setTimeout(entrar, Date.now() > limite ? 0 : 120); };
+      quieto();
+    },
+    aba(nova, antiga) {
+      posicionar(revelado && antiga && nova !== antiga);
+      if (!revelado || calmo || !antiga || nova === antiga) return;
+      const dir = ORDEM.indexOf(nova) > ORDEM.indexOf(antiga) ? 1 : -1;
+      const painel = document.getElementById('aba-' + nova);
+      if (painel) anima(painel, [{ opacity: 0, transform: 'translateX(' + dir * 16 + 'px)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: EASE });
+      atraso = 60;
+      silencio = true;
+      agendar();
+    },
+    mes(dir) {
+      if (!revelado || calmo) return;
+      anima(document.getElementById('mes-plano'), [{ opacity: 0, transform: 'translateX(' + dir * 20 + 'px)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: EASE });
+      anima(document.getElementById('mes-nome'), [{ opacity: 0, transform: 'translateX(' + dir * 10 + 'px)' }, { opacity: 1, transform: 'none' }], { duration: 360, easing: EASE });
+      silencio = true;
+      agendar();
+    },
+  };
+  posicionar(false);
+  // iOS só ativa :active com um ouvinte de toque
+  document.addEventListener('touchstart', () => {}, { passive: true });
 })();
 </script>
 
@@ -1265,10 +1598,14 @@
   let toastTimer = null;
   function toast(msg) {
     const t = $('#toast');
+    t.classList.remove('sai');
     t.textContent = msg;
     t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
+    toastTimer = setTimeout(() => {
+      t.classList.add('sai');
+      toastTimer = setTimeout(() => { t.hidden = true; t.classList.remove('sai'); }, 220);
+    }, 3500);
   }
   function msgErro(e) {
     const code = e && e.code;
@@ -1320,15 +1657,20 @@
       }
     });
     svg += fills.join('') + strokes.join('');
+    const ocupados = [];
     (opts.marcas || []).filter((m) => m.i >= 0 && m.i <= n - 1).sort((a, b) => a.i - b.i).forEach((m, mi) => {
       const xx = x(m.i);
-      // rótulos alternam para a esquerda e a direita da linha, para dois vencimentos próximos não se cobrirem
-      const ly = 12;
+      // rótulos alternam para a esquerda e a direita da linha; se ainda encostam num anterior, descem uma linha
       let anchor = mi % 2 ? 'start' : 'end';
       if (xx < 70) anchor = 'start';
       if (xx > W - 70) anchor = 'end';
       const tx = anchor === 'end' ? xx - 4 : xx + 4;
-      svg += '<line x1="' + xx.toFixed(1) + '" x2="' + xx.toFixed(1) + '" y1="4" y2="' + base + '" stroke="var(--mine)" stroke-width="1" stroke-dasharray="3 3"></line>';
+      const larg = String(m.rotulo).length * 6;
+      const x0 = anchor === 'end' ? tx - larg : tx, x1 = anchor === 'end' ? tx : tx + larg;
+      let ly = 12;
+      while (ocupados.some((o) => o.ly === ly && x0 < o.x1 + 4 && x1 > o.x0 - 4) && ly < 12 + 13 * 3) ly += 13;
+      ocupados.push({ x0, x1, ly });
+      svg += '<line x1="' + xx.toFixed(1) + '" x2="' + xx.toFixed(1) + '" y1="' + (ly - 8) + '" y2="' + base + '" stroke="var(--mine)" stroke-width="1" stroke-dasharray="3 3"></line>';
       svg += '<text class="lbl" x="' + tx.toFixed(1) + '" y="' + ly + '" text-anchor="' + anchor + '" fill="var(--mine)">' + esc(m.rotulo) + '</text>';
     });
     refs.forEach((r) => {
@@ -1675,7 +2017,7 @@
     let acc = 0;
     const arcos = itens.map((it) => {
       const len = Math.max(0, it.share * C - gap);
-      const s = '<circle cx="84" cy="84" r="' + r + '" fill="none" stroke="' + it.cor + '" stroke-width="22" stroke-dasharray="' + len.toFixed(2) + ' ' + (C - len).toFixed(2) + '" stroke-dashoffset="' + (-acc).toFixed(2) + '" transform="rotate(-90 84 84)"></circle>';
+      const s = '<circle data-k="' + esc(it.id) + '" data-c="' + C.toFixed(2) + '" cx="84" cy="84" r="' + r + '" fill="none" stroke="' + it.cor + '" stroke-width="22" stroke-dasharray="' + len.toFixed(2) + ' ' + (C - len).toFixed(2) + '" stroke-dashoffset="' + (-acc).toFixed(2) + '" transform="rotate(-90 84 84)"></circle>';
       acc += it.share * C;
       return s;
     }).join('');
@@ -1683,7 +2025,8 @@
     box.innerHTML =
       '<div class="donut-wrap">' +
         '<svg class="donut" viewBox="0 0 168 168" role="img" aria-label="Divisão do patrimônio por aplicação">' +
-          '<circle cx="84" cy="84" r="' + r + '" fill="none" stroke="var(--surface-2)" stroke-width="22"></circle>' + arcos +
+          '<defs><mask id="rosca-mascara" maskUnits="userSpaceOnUse" x="0" y="0" width="168" height="168"><circle class="varredura" data-c="' + (C + 2).toFixed(2) + '" cx="84" cy="84" r="' + r + '" fill="none" stroke="#fff" stroke-width="26" stroke-dasharray="' + (C + 2).toFixed(2) + ' ' + (C + 2).toFixed(2) + '" stroke-dashoffset="0" transform="rotate(-90 84 84)"></circle></mask></defs>' +
+          '<circle cx="84" cy="84" r="' + r + '" fill="none" stroke="var(--surface-2)" stroke-width="22"></circle><g mask="url(#rosca-mascara)">' + arcos + '</g>' +
           '<text class="c-lbl" x="84" y="78" text-anchor="middle">investido</text>' +
           '<text class="c-total" x="84" y="98" text-anchor="middle">' + esc(pct1.format(1 - parado)) + '</text>' +
         '</svg>' +
@@ -2428,6 +2771,7 @@
 
   /* ---------- abas ---------- */
   function abrirAba(t) {
+    const antes = S.tab;
     S.tab = t;
     $$('.tab').forEach((b) => {
       const on = b.dataset.tab === t;
@@ -2439,6 +2783,7 @@
     if (t === 'patrimonio') renderPatrimonio();
     if (t === 'mim') renderMim();
     if (t === 'ajustes' && !S.aj.dirty) preencherAjustes();
+    if (window.caixaMov) window.caixaMov.aba(t, antes);
   }
 
   function render() {
@@ -2464,8 +2809,8 @@
     const go = ev.target.closest('[data-goto]');
     if (go) abrirAba(go.dataset.goto);
   });
-  $('#mes-ant').addEventListener('click', () => { S.mes = addMes(S.mes, -1); S.confirmar = null; renderMes(); });
-  $('#mes-prox').addEventListener('click', () => { S.mes = addMes(S.mes, 1); S.confirmar = null; renderMes(); });
+  $('#mes-ant').addEventListener('click', () => { S.mes = addMes(S.mes, -1); S.confirmar = null; renderMes(); if (window.caixaMov) window.caixaMov.mes(-1); });
+  $('#mes-prox').addEventListener('click', () => { S.mes = addMes(S.mes, 1); S.confirmar = null; renderMes(); if (window.caixaMov) window.caixaMov.mes(1); });
 
   $('#btn-extra').addEventListener('click', () => abrirForm(null, 'extra'));
   $('#rc-cancelar').addEventListener('click', fecharForm);
@@ -2702,7 +3047,12 @@
   (() => {
     const arq = document.getElementById('backup-arquivo');
     const msg = document.getElementById('backup-msg');
-    const avisar = (t) => { msg.textContent = t; msg.hidden = false; const toast = document.getElementById('toast'); toast.textContent = t; toast.hidden = false; setTimeout(() => { toast.hidden = true; }, 4000); };
+    const avisar = (t) => {
+      msg.textContent = t; msg.hidden = false;
+      const toast = document.getElementById('toast');
+      toast.classList.remove('sai'); toast.textContent = t; toast.hidden = false;
+      setTimeout(() => { toast.classList.add('sai'); setTimeout(() => { toast.hidden = true; toast.classList.remove('sai'); }, 220); }, 4000);
+    };
     let confirmar = 0;
     document.addEventListener('click', (ev) => {
       const b = ev.target.closest('[data-importar]');
