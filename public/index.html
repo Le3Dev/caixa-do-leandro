@@ -1782,21 +1782,26 @@
     if (S.tab === 'patrimonio' && chart) desenharLinhas($('#proj-chart'), chart);
   }
 
-  /* Investido + o que sobra para você + o que já caiu e falta investir + produtos de revenda. */
+  /* O patrimônio inteiro dividido pelo destino do dinheiro. A conta corrente guarda o que é para você,
+     o que falta investir e o que ainda falta distribuir; o que sobra nela aparece como Resto na conta,
+     para a soma bater sempre com o Patrimônio hoje. */
   function renderTudo(e) {
     const box = $('#pat-tudo');
     if (!S.loaded.revendas || !S.loaded.movs) return;
     const s = saldoMim();
     const aplicado = e.itens.filter((it) => it.hoje != null && it.tipo !== 'conta' && it.tipo !== 'estoque').reduce((a, it) => a + it.hoje, 0);
+    const estoque = e.itens.filter((it) => it.tipo === 'estoque').reduce((a, it) => a + it.hoje, 0);
     const depois = paraDistribuir();
     const falta = S.receb.filter((r) => !r.investido).reduce((a, r) => a + (Number(r.investir) || 0), 0);
+    const resto = r2(e.conta - s.disponivel - falta - depois);
     const partes = [
       { nome: 'Investido', v: aplicado + depois, cor: 'var(--invest)', sub: depois > 0 ? 'com ' + R(depois) + ' ainda para distribuir' : '' },
       { nome: 'Sobra para você', v: s.disponivel, cor: 'var(--mine)', sub: '' },
-      { nome: 'Falta investir', v: falta, cor: 'var(--c2)', sub: 'já caiu na conta' },
-      { nome: 'Produtos para revender', v: s.estoque, cor: 'var(--c4)', sub: '' },
+      { nome: 'Falta investir', v: falta, cor: 'var(--c2)', sub: '' },
+      { nome: 'Produtos para revender', v: estoque, cor: 'var(--c4)', sub: '' },
+      { nome: resto >= 0 ? 'Resto na conta corrente' : 'Conta corrente abaixo do esperado', v: resto, cor: 'var(--c8)', sub: '' },
     ].filter((p) => Math.abs(p.v) >= 0.005);
-    const total = partes.reduce((a, p) => a + p.v, 0);
+    const total = e.total;
     const pos = partes.filter((p) => p.v > 0);
     const somaPos = pos.reduce((a, p) => a + p.v, 0) || 1;
     box.innerHTML = '<span class="big">' + R(total) + '</span>' +
