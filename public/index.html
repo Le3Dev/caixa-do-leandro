@@ -379,6 +379,22 @@
     padding: 12px 16px; border-radius: 12px; font-weight: 500;
     box-shadow: 0 8px 24px rgb(0 0 0 / .22); z-index: 10;
   }
+  /* Reserva de emergência */
+  .reserva-top { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
+  .reserva-top small { color: var(--muted); font-size: .8rem; }
+  .reserva-valor { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; }
+  .reserva-de { color: var(--muted); font-weight: 500; }
+  .meta-bar { position: relative; height: 12px; }
+  .meta-bar .tick { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--surface); }
+  .meta-marcos { position: relative; height: 2.6rem; margin-top: -4px; font-size: .74rem; color: var(--muted); }
+  .meta-marcos span { position: absolute; top: 0; transform: translateX(-50%); text-align: center; white-space: nowrap; line-height: 1.35; }
+  .meta-marcos span:last-child { transform: translateX(-100%); text-align: right; }
+  .meta-marcos b { display: block; color: var(--ink); font-weight: 600; font-size: .8rem; }
+  .meta-marcos .ok b { color: var(--invest); }
+  .reserva-chega { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+  .meta-chega { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; color: var(--invest); }
+  .reserva-chega small { color: var(--muted); font-size: .85rem; }
+
   /* Movimento: uma curva só, que desacelera devagar e não quica. */
   :root { --ease: cubic-bezier(.22, 1, .36, 1); }
   html { -webkit-tap-highlight-color: transparent; }
@@ -598,6 +614,7 @@
     <div id="pat-resumo" class="panel">
       <div class="card empty"><p>Carregando seus saldos…</p></div>
     </div>
+    <div class="card" id="pat-reserva" hidden></div>
     <button class="btn-primary" id="btn-checkin" type="button">Atualizar saldos da semana</button>
     <div class="card form" id="form-checkin" hidden>
       <h3>Check-in da semana</h3>
@@ -691,6 +708,19 @@
         </div>
       </div>
       <div class="preview" id="aj-preview"><p class="hint">—</p></div>
+    </div>
+
+    <div class="card form" id="aj-reserva">
+      <h3>Reserva de emergência</h3>
+      <div class="grid2">
+        <label class="field" for="aj-res-valor">Meta
+          <span class="input"><em>R$</em><input id="aj-res-valor" type="text" inputmode="decimal" autocomplete="off"></span>
+        </label>
+        <label class="field" for="aj-res-conta">Onde ela fica
+          <select id="aj-res-conta"></select>
+        </label>
+      </div>
+      <p class="hint">Coloque 0 para esconder a meta.</p>
     </div>
 
     <div class="card" id="aj-taxa">
@@ -1587,6 +1617,82 @@
     return { ck, iso, du, dol, total, conta: contaT, investido: total - contaT, ganhoRenda, ganhoDolar, itens, semValor };
   }
 
+  /* ---------- reserva de emergência ---------- */
+  const RESERVA_PADRAO = 30000;
+  function reservaCfg(contasAj) {
+    const c = S.cfg || {};
+    const contas = (contasAj || c.contas || []).filter((x) => x.moeda !== 'USD' && x.tipo !== 'conta');
+    const r = c.reserva || {};
+    const valor = r.valor != null ? Number(r.valor) || 0 : RESERVA_PADRAO;
+    let conta = contas.find((x) => x.id === r.contaId);
+    // sem escolha: a primeira aplicação no CDI sem vencimento (dinheiro que dá para tirar a qualquer hora)
+    if (!conta) conta = contas.find((x) => idxDe(x).indexador === 'cdi' && !x.vencimento) || contas.find((x) => idxDe(x).indexador === 'cdi') || null;
+    return { valor, conta, contaId: conta ? conta.id : '' };
+  }
+  /* Simula a conta da reserva: rende pela taxa dela e recebe o que você investe no dia 15 e no fim de cada mês. */
+  function projReserva(e) {
+    const rc = reservaCfg();
+    if (!(rc.valor > 0) || !rc.conta || !S.cfg) return null;
+    const hoje = hojeISO();
+    const it = e.itens.find((x) => x.id === rc.contaId);
+    const saldo = it && it.hoje != null ? it.hoje : 0;
+    const renda = rendaDe(rc.contaId);
+    const anual = renda ? renda.anual : 0;
+    const p = plano(S.cfg);
+    const inv = { adiantamento: r2(Math.max(0, p.adiant - p.mim15)), final: r2(Math.max(0, p.final - p.mimFim)) };
+    // o que já caiu e ainda vai ser aplicado entra hoje
+    const pendente = r2(paraDistribuir() + S.receb.filter((r) => !r.investido).reduce((a, r) => a + (Number(r.investir) || 0), 0));
+    const marcos = [0.25, 0.5, 0.75, 1].map((f) => ({ f, valor: rc.valor * f, ja: saldo >= rc.valor * f - 0.005, data: null }));
+    let v = saldo + pendente, d = hoje;
+    const marcar = () => marcos.forEach((m) => { if (!m.data && v >= m.valor - 0.005) m.data = d; });
+    marcar();
+    let mes = mesDe(hoje);
+    const andaSozinho = inv.adiantamento + inv.final > 0 || anual > 0;
+    for (let k = 0; k < 600 && andaSozinho && marcos.some((m) => !m.data); k++) {
+      ['adiantamento', 'final'].forEach((tipo) => {
+        const data = dataPrevista(mes, tipo);
+        if (data <= hoje || S.receb.some((r) => r.mes === mes && r.tipo === tipo)) return;
+        if (anual > 0) v *= Math.pow(1 + anual, diasUteis(d, data) / 252);
+        d = data;
+        marcar();
+        v += inv[tipo];
+        marcar();
+      });
+      mes = addMes(mes, 1);
+    }
+    return { rc, saldo, renda, investirMes: r2(inv.adiantamento + inv.final), marcos, chega: marcos[3].data, batida: marcos[3].ja };
+  }
+  function renderReserva(e) {
+    const box = $('#pat-reserva');
+    const pr = e ? projReserva(e) : null;
+    if (!pr) { box.hidden = true; return; }
+    box.hidden = false;
+    const { rc, saldo, marcos } = pr;
+    const pct = Math.max(0, Math.min(1, saldo / rc.valor));
+    const mesCurto = (iso) => new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') + '/' + iso.slice(2, 4);
+    const hoje = hojeISO();
+    const mesesAte = (iso) => (Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7))) - (Number(hoje.slice(0, 4)) * 12 + Number(hoje.slice(5, 7)));
+    const liquido = plano(S.cfg).liquido;
+    let html = '<div class="reserva-top"><h3>Reserva de emergência</h3><small>' + esc(rc.conta.nome) + ' · ' + esc(rc.conta.lugar) + (pr.renda ? ' · ' + esc(pr.renda.rotulo.split(' · ')[0]) : '') + '</small></div>' +
+      '<div class="reserva-valor"><span class="big">' + R(saldo) + '</span><span class="reserva-de">de ' + R(rc.valor) + ' (' + pct1.format(pct) + ')</span></div>' +
+      '<div class="meter meta-bar" aria-hidden="true"><i style="width:' + (pct * 100).toFixed(2) + '%"></i>' +
+        [25, 50, 75].map((x) => '<span class="tick" style="left:' + x + '%"></span>').join('') + '</div>' +
+      '<div class="meta-marcos">' + marcos.map((m) => '<span class="' + (m.ja ? 'ok' : '') + '" style="left:' + (m.f * 100) + '%"><b>' +
+        (m.ja ? 'feito' : m.data ? mesCurto(m.data) : '—') + '</b>' + esc(compact.format(m.valor)) + '</span>').join('') + '</div>';
+    if (pr.batida) {
+      html += '<div class="reserva-chega"><span class="meta-chega">Meta batida</span></div><p class="hint">A reserva está completa. Daqui pra frente, o que você investe pode ir para ações.</p>';
+    } else if (pr.chega) {
+      const n = mesesAte(pr.chega);
+      html += '<div class="reserva-chega"><span class="meta-chega">Chega em ' + esc(nomeMes(mesDe(pr.chega), false)) + ' de ' + pr.chega.slice(0, 4) + '</span><small>' + (n <= 0 ? 'este mês' : 'daqui a ' + n + (n === 1 ? ' mês' : ' meses')) + '</small></div>' +
+        '<p class="hint">Investindo ' + R(pr.investirMes) + ' por mês nela' + (pr.renda && pr.renda.tipo === 'cdi' ? ', com o CDI a ' + num1.format(cdiAtual()) + '% ao ano' : '') + '.</p>';
+    } else {
+      html += '<p class="hint">Com o que vai para investir hoje, a reserva não chega lá. Confira o salário e a sua parte em Ajustes.</p>';
+    }
+    html += '<div class="facts"><div class="fact"><span>Faltam</span><b>' + R(Math.max(0, rc.valor - saldo)) + '</b></div>' +
+      (liquido > 0 ? '<div class="fact"><span>Meses do seu salário líquido</span><b>' + num1.format(Math.round(rc.valor / liquido * 10) / 10) + '</b></div>' : '') + '</div>';
+    box.innerHTML = html;
+  }
+
   /* Valor marcado como investido no Mês que ainda não foi colocado numa aplicação. */
   function paraDistribuir() {
     const marcado = S.receb.filter((r) => r.investido).reduce((a, r) => a + (Number(r.investir) || 0), 0);
@@ -1966,6 +2072,7 @@
     if (!S.checkins.length) {
       box.innerHTML = '<div class="card empty"><p>Nenhum check-in ainda. Toque em Atualizar saldos e copie o saldo de cada app.</p></div>';
       ['#pat-divisao', '#pat-proj', '#pat-grafico', '#pat-lista', '#pat-tudo'].forEach((s) => { $(s).innerHTML = ''; });
+      $('#pat-reserva').hidden = true;
       return;
     }
     const hoje = hojeISO();
@@ -1996,6 +2103,7 @@
     if (dias >= 7) html += '<div class="nudge">Faz ' + dias + ' dias do último check-in. Atualize os saldos: o rendimento e o dólar o app calcula, mas depósitos e as aplicações sem taxa só entram pelo check-in.</div>';
     box.innerHTML = html;
 
+    renderReserva(e);
     renderDivisao(e);
     renderProjecao(e);
     renderLista(e);
@@ -2198,15 +2306,22 @@
     $('#dist-titulo').textContent = 'Você tem ' + R(pd) + ' para distribuir';
     const sel = $('#dist-conta');
     const ops = ((S.cfg && S.cfg.contas) || []).filter((c) => c.tipo !== 'conta');
-    const assinatura = ops.map((c) => c.id + c.nome).join('|');
+    const rc = reservaCfg();
+    const resId = rc.valor > 0 ? rc.contaId : '';
+    const assinatura = ops.map((c) => c.id + c.nome).join('|') + '|' + resId;
     if (sel.dataset.ops !== assinatura && document.activeElement !== sel) {
       const atual = sel.value;
       sel.innerHTML = '<option value="">Escolha a aplicação</option>' + ops.map((c) => {
         const r = rendaDe(c.id);
-        return '<option value="' + esc(c.id) + '">' + esc(c.nome) + ' · ' + esc(c.lugar) + (r ? ' (' + esc(r.rotulo.split(' · ')[0]) + ')' : '') + '</option>';
+        return '<option value="' + esc(c.id) + '">' + esc(c.nome) + ' · ' + esc(c.lugar) + (r ? ' (' + esc(r.rotulo.split(' · ')[0]) + ')' : '') + (c.id === resId ? ' · reserva' : '') + '</option>';
       }).join('');
       sel.dataset.ops = assinatura;
       if (ops.some((c) => c.id === atual)) sel.value = atual;
+    }
+    if (!sel.value && resId && document.activeElement !== sel) {
+      const e = estimativa(hojeISO());
+      const pr = e ? projReserva(e) : null;
+      if (pr && !pr.batida) sel.value = resId;
     }
     if (!S.distTocado && document.activeElement !== $('#dist-valor')) $('#dist-valor').value = num2.format(pd);
   }
@@ -2658,7 +2773,16 @@
   }
 
   /* ---------- aba Ajustes ---------- */
-  const campoAj = { bruto: '#aj-bruto', pct: '#aj-pct', desc: '#aj-desc', mim: '#aj-mim' };
+  const campoAj = { bruto: '#aj-bruto', pct: '#aj-pct', desc: '#aj-desc', mim: '#aj-mim', resValor: '#aj-res-valor', resConta: '#aj-res-conta' };
+  function renderResConta() {
+    const sel = $('#aj-res-conta');
+    if (document.activeElement === sel) return;
+    const atual = sel.value || reservaCfg().contaId;
+    const ops = S.aj.contas.filter((c) => c.moeda !== 'USD' && c.tipo !== 'conta');
+    sel.innerHTML = ops.map((c) => '<option value="' + esc(c.id) + '">' + esc(c.nome) + ' · ' + esc(c.lugar) + '</option>').join('') || '<option value="">Cadastre uma aplicação abaixo</option>';
+    const auto = reservaCfg(S.aj.contas).contaId;
+    sel.value = ops.some((c) => c.id === atual) ? atual : auto;
+  }
   function preencherAjustes() {
     const c = S.cfg || {};
     const put = (sel, v, f) => { if (document.activeElement !== $(sel)) $(sel).value = v == null ? '' : f(v); };
@@ -2666,8 +2790,11 @@
     put(campoAj.pct, c.adiantamentoPct, (v) => num1.format(v));
     put(campoAj.desc, c.descontosFixos, (v) => num2.format(v));
     put(campoAj.mim, c.paraMim, (v) => num2.format(v));
+    put(campoAj.resValor, reservaCfg().valor, (v) => num2.format(v));
     S.aj.modo = c.modo || 'proporcional';
     S.aj.contas = JSON.parse(JSON.stringify(c.contas || []));
+    $('#aj-res-conta').value = '';
+    renderResConta();
     marcarModo();
     renderContas();
     previewAjustes();
@@ -2687,7 +2814,8 @@
   }
   function lerAjustes() {
     const v = (sel) => parseNum($(sel).value);
-    return { salarioBruto: v(campoAj.bruto), adiantamentoPct: v(campoAj.pct), descontosFixos: v(campoAj.desc), paraMim: v(campoAj.mim), modo: S.aj.modo };
+    return { salarioBruto: v(campoAj.bruto), adiantamentoPct: v(campoAj.pct), descontosFixos: v(campoAj.desc), paraMim: v(campoAj.mim), modo: S.aj.modo,
+      reservaValor: $(campoAj.resValor).value.trim() ? v(campoAj.resValor) : 0, reservaConta: $(campoAj.resConta).value };
   }
   function marcarModo() {
     $$('#aj-modo button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.modo === S.aj.modo)));
@@ -2723,6 +2851,7 @@
       return '<li><span>' + esc(c.nome) + '<small>' + esc(c.lugar) + ' · ' + (c.tipo === 'conta' ? 'conta corrente' : 'investimento') + ' · ' + (c.moeda === 'USD' ? 'dólar' : 'real') + (c.vencimento ? ' · vence em ' + esc(c.vencimento) : '') + '</small></span>' +
         '<span class="conta-dir">' + dir + '</span></li>';
     }).join('');
+    renderResConta();
   }
   function renderHist() {
     const h = (S.cfg && S.cfg.historico) || [];
@@ -2738,6 +2867,7 @@
     if (!(a.adiantamentoPct >= 0 && a.adiantamentoPct <= 100)) return erro('O adiantamento precisa estar entre 0% e 100%.');
     if (!(a.descontosFixos >= 0)) return erro('Coloque o total de descontos (pode ser 0).');
     if (!(a.paraMim >= 0)) return erro('Coloque quanto fica com você por mês.');
+    if (!(a.reservaValor >= 0)) return erro('Coloque a meta da reserva (ou 0 para esconder).');
     const ant = S.cfg || {};
     const hist = (ant.historico || []).slice();
     const mesAtual = mesDe(hojeISO());
@@ -2753,6 +2883,7 @@
       paraMim: r2(a.paraMim),
       modo: a.modo,
       contas: S.aj.contas,
+      reserva: { valor: r2(a.reservaValor), contaId: a.reservaConta || '' },
       historico: hist,
       atualizadoEm: new Date().toISOString(),
     });
