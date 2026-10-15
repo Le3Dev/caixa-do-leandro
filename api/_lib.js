@@ -1,6 +1,6 @@
 // Coisas usadas por todas as funções: login, leitura e gravação dos dados.
 // Os dados ficam num único arquivo JSON privado no Vercel Blob.
-import { get, put, BlobPreconditionFailedError, BlobNotFoundError } from '@vercel/blob';
+import { get, head, put, BlobPreconditionFailedError, BlobNotFoundError } from '@vercel/blob';
 import crypto from 'node:crypto';
 
 const ARQUIVO = 'caixa/estado.json';
@@ -75,16 +75,21 @@ export function exigirLogin(request) {
 }
 
 /* ---------- dados ---------- */
+// A versão (etag) vem do head(), que é a mesma que o put() confere; a que vem no download do get()
+// pode chegar em outro formato e fazer toda gravação parecer conflito.
+// Lê a versão antes do conteúdo: se alguém gravar no meio, o put() falha e tenta de novo.
 export async function lerEstado() {
-  let r = null;
+  let meta;
   try {
-    r = await get(ARQUIVO, { access: 'private', useCache: false });
+    meta = await head(ARQUIVO);
   } catch (e) {
-    if (!(e instanceof BlobNotFoundError)) throw e;
+    if (e instanceof BlobNotFoundError) return { estado: { cols: {} }, etag: null, salvo: false };
+    throw e;
   }
-  if (!r || r.statusCode !== 200) return { estado: { cols: {} }, etag: null, salvo: false };
+  const r = await get(ARQUIVO, { access: 'private', useCache: false });
+  if (!r || r.statusCode !== 200) throw new Error('não consegui baixar os dados (' + (r ? r.statusCode : 404) + ')');
   const texto = await new Response(r.stream).text();
-  return { estado: JSON.parse(texto), etag: r.blob.etag, salvo: true };
+  return { estado: JSON.parse(texto), etag: meta.etag, salvo: true };
 }
 
 async function salvarEstado(estado, etag) {
