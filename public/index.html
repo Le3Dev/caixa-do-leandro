@@ -318,6 +318,7 @@
   .btn-row.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .btn-row.tres .btn-ghost { padding-inline: 6px; }
   #iv-tudo { align-self: flex-start; margin-top: -6px; }
+  .notif-cheio { grid-column: 1 / -1; }
   .saldo-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .saldo-top .link { padding: 0; }
   .cat-total { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
@@ -805,6 +806,16 @@
       <h3>Histórico de salário</h3>
       <div class="hist" id="aj-hist"><p class="hint">—</p></div>
     </div>
+    <div class="card" id="aj-notif-card">
+      <h3>Notificações</h3>
+      <p class="hint" id="notif-status">—</p>
+      <div class="btn-row">
+        <button class="btn-primary notif-cheio" id="notif-ativar" type="button" hidden>Ativar notificações</button>
+        <button class="btn-ghost" id="notif-teste" type="button" hidden>Enviar teste</button>
+        <button class="btn-ghost" id="notif-desativar" type="button" hidden>Desativar</button>
+      </div>
+    </div>
+
     <div class="card" id="aj-backup-card">
       <h3>Backup</h3>
       <div class="btn-row">
@@ -3281,6 +3292,10 @@
   /* ---------- início ---------- */
   let abaSalva = null;
   try { abaSalva = localStorage.getItem('caixa-aba'); } catch (e) { abaSalva = null; }
+  try {
+    const abaUrl = new URLSearchParams(location.search).get('aba');
+    if (abaUrl) { abaSalva = abaUrl; history.replaceState(null, '', location.pathname); }
+  } catch (e) { /* segue com a aba salva */ }
   abrirAba(['mes', 'mim', 'patrimonio', 'ajustes'].includes(abaSalva) ? abaSalva : 'mes');
   $('#mes-nome').textContent = nomeMes(S.mes);
 
@@ -3379,7 +3394,111 @@
     });
     document.getElementById('btn-baixar').addEventListener('click', () => window.caixaBackup());
   })();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
+
+  /* ---------- notificações ---------- */
+  (() => {
+    const $n = (id) => document.getElementById(id);
+    const status = $n('notif-status');
+    const bAtivar = $n('notif-ativar'), bTeste = $n('notif-teste'), bDesativar = $n('notif-desativar');
+    const suportado = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    let instalado = false;
+    try { instalado = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { instalado = false; }
+    const toast = (t) => {
+      const el = $n('toast');
+      el.classList.remove('sai'); el.textContent = t; el.hidden = false;
+      setTimeout(() => { el.classList.add('sai'); setTimeout(() => { el.hidden = true; el.classList.remove('sai'); }, 220); }, 3500);
+    };
+    const bytes = (s) => { const p = '='.repeat((4 - (s.length % 4)) % 4); const raw = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); };
+    const iguais = (a, b) => { if (!a || !b) return false; const x = new Uint8Array(a), y = new Uint8Array(b); return x.length === y.length && x.every((v, i) => v === y[i]); };
+    async function post(corpo) {
+      const r = await fetch('/api/push', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo) });
+      if (!r.ok) throw new Error('servidor ' + r.status);
+      return r.json();
+    }
+    async function chaveServidor() {
+      const r = await fetch('/api/push', { credentials: 'same-origin', cache: 'no-store' });
+      if (!r.ok) throw new Error('servidor ' + r.status);
+      return (await r.json()).chave;
+    }
+    let reg = null;
+    const pronto = suportado ? navigator.serviceWorker.register('/sw.js').then((r) => { reg = r; return r; }).catch(() => null) : Promise.resolve(null);
+
+    function botoes(ativar, ligado) {
+      bAtivar.hidden = !ativar;
+      bTeste.hidden = !ligado;
+      bDesativar.hidden = !ligado;
+    }
+    async function atualizar() {
+      if (!suportado) {
+        status.textContent = ios && !instalado
+          ? 'No iPhone, as notificações só funcionam com o app na Tela de Início. No Safari, toque em Compartilhar → Adicionar à Tela de Início, abra pelo ícone e ative aqui.'
+          : 'Este navegador não recebe notificações.';
+        botoes(false, false);
+        return;
+      }
+      if (Notification.permission === 'denied') {
+        status.textContent = 'Estão bloqueadas. Libere em Ajustes do iPhone → Notificações → Caixa.';
+        botoes(false, false);
+        return;
+      }
+      const r = await pronto;
+      const sub = r ? await r.pushManager.getSubscription() : null;
+      if (Notification.permission === 'granted' && sub) {
+        status.textContent = 'Ligadas. De manhã, no dia 15 e no último dia útil do mês, chega um aviso com quanto deve cair e quanto investir, se você ainda não lançou o pagamento.';
+        botoes(false, true);
+      } else {
+        status.textContent = 'Receba um aviso no dia 15 e no último dia útil do mês, quando o pagamento deve cair.';
+        botoes(true, false);
+      }
+    }
+    async function inscrever() {
+      const r = await pronto || await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      const chave = bytes(await chaveServidor());
+      let sub = await r.pushManager.getSubscription();
+      if (sub && !iguais(sub.options && sub.options.applicationServerKey, chave)) { await sub.unsubscribe(); sub = null; }
+      if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chave });
+      await post({ acao: 'assinar', sub: sub.toJSON() });
+      return sub;
+    }
+    bAtivar.addEventListener('click', async () => {
+      bAtivar.disabled = true;
+      try {
+        // o pedido de permissão precisa sair direto do toque
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return;
+        await inscrever();
+        await post({ acao: 'teste' });
+        toast('Notificações ligadas. Mandei uma de teste.');
+      } catch (e) {
+        toast('Não consegui ligar as notificações. Tente de novo.');
+      } finally {
+        bAtivar.disabled = false;
+        atualizar();
+      }
+    });
+    bTeste.addEventListener('click', async () => {
+      bTeste.disabled = true;
+      try {
+        await inscrever();
+        const r = await post({ acao: 'teste' });
+        toast(r.enviados ? 'Teste enviado.' : 'Não consegui enviar. Desative e ative de novo.');
+      } catch (e) { toast('Não consegui enviar o teste.'); } finally { bTeste.disabled = false; }
+    });
+    bDesativar.addEventListener('click', async () => {
+      bDesativar.disabled = true;
+      try {
+        const r = await pronto;
+        const sub = r ? await r.pushManager.getSubscription() : null;
+        if (sub) { await post({ acao: 'sair', endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+        toast('Notificações desligadas neste aparelho.');
+      } catch (e) { toast('Não consegui desligar.'); } finally { bDesativar.disabled = false; atualizar(); }
+    });
+    atualizar();
+    // a cada abertura, confirma a inscrição com o servidor (se o app foi reinstalado ou a chave mudou)
+    if (suportado && Notification.permission === 'granted') setTimeout(() => { inscrever().then(atualizar).catch(() => {}); }, 4000);
+  })();
 </script>
 </body>
 </html>

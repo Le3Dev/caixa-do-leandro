@@ -27,7 +27,7 @@ export function falha(e) {
 /* ---------- sessão ---------- */
 // A chave que assina o login vem de APP_SECRET; sem ela, sai da senha junto com o token do Blob,
 // que também é secreto. Trocar a senha desconecta todos os aparelhos.
-function chave() {
+export function chave() {
   if (process.env.APP_SECRET) return process.env.APP_SECRET;
   if (!process.env.APP_PASSWORD) throw new Error('APP_PASSWORD não configurada');
   return crypto.createHash('sha256').update('caixa:' + process.env.APP_PASSWORD + ':' + (process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID || '')).digest('hex');
@@ -78,37 +78,37 @@ export function exigirLogin(request) {
 // A versão (etag) vem do head(), que é a mesma que o put() confere; a que vem no download do get()
 // pode chegar em outro formato e fazer toda gravação parecer conflito.
 // Lê a versão antes do conteúdo: se alguém gravar no meio, o put() falha e tenta de novo.
-export async function lerEstado() {
+export async function lerEstado(arquivo = ARQUIVO) {
   let meta;
   try {
-    meta = await head(ARQUIVO);
+    meta = await head(arquivo);
   } catch (e) {
     if (e instanceof BlobNotFoundError) return { estado: { cols: {} }, etag: null, salvo: false };
     throw e;
   }
-  const r = await get(ARQUIVO, { access: 'private', useCache: false });
+  const r = await get(arquivo, { access: 'private', useCache: false });
   if (!r || r.statusCode !== 200) throw new Error('não consegui baixar os dados (' + (r ? r.statusCode : 404) + ')');
   const texto = await new Response(r.stream).text();
   return { estado: JSON.parse(texto), etag: meta.etag, salvo: true };
 }
 
-async function salvarEstado(estado, etag) {
+async function salvarEstado(estado, etag, arquivo) {
   const corpo = JSON.stringify(estado);
   if (corpo.length > 4_000_000) throw new ErroPedido('Os dados passaram do limite do app.', 413);
   const opcoes = { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json', cacheControlMaxAge: 60 };
   if (etag) opcoes.ifMatch = etag;
-  await put(ARQUIVO, corpo, opcoes);
+  await put(arquivo, corpo, opcoes);
 }
 
 /* Lê, muda e grava. Se outra gravação entrou no meio, tenta de novo com os dados novos. */
-export async function alterar(mudar) {
+export async function alterar(mudar, arquivo = ARQUIVO) {
   for (let tentativa = 0; tentativa < 4; tentativa++) {
-    const { estado, etag } = await lerEstado();
+    const { estado, etag } = await lerEstado(arquivo);
     estado.cols = estado.cols || {};
     mudar(estado);
     estado.atualizadoEm = new Date().toISOString();
     try {
-      await salvarEstado(estado, etag);
+      await salvarEstado(estado, etag, arquivo);
       return estado;
     } catch (e) {
       if (e instanceof BlobPreconditionFailedError && tentativa < 3) continue;
