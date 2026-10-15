@@ -318,6 +318,15 @@
   .btn-row.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .btn-row.tres .btn-ghost { padding-inline: 6px; }
   #iv-tudo { align-self: flex-start; margin-top: -6px; }
+  .saldo-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .saldo-top .link { padding: 0; }
+  .cat-total { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+  .cat-total b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; }
+  .cat-total small { color: var(--muted); font-size: .82rem; }
+  .cats { display: flex; flex-direction: column; gap: 10px; }
+  .cat-row { display: grid; grid-template-columns: minmax(5.5rem, auto) 1fr auto; align-items: center; gap: 10px; font-size: .9rem; }
+  .cat-row b { font-weight: 600; white-space: nowrap; text-align: right; }
+  .cat-row b small { display: block; color: var(--muted); font-weight: 400; font-size: .76rem; }
   .rv { display: flex; flex-direction: column; gap: 6px; padding-block: 12px; border-bottom: 1px solid var(--line); }
   .rv:first-child { padding-top: 0; }
   .rv:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -488,11 +497,11 @@
     <div id="mim-saldo" class="panel">
       <div class="card empty"><p>Carregando seu saldo…</p></div>
     </div>
-    <button class="btn-primary" id="btn-compra" type="button">Comprei para revender</button>
+    <button class="btn-primary" id="btn-gasto" type="button">Gastei</button>
     <div class="btn-row tres">
-      <button class="btn-ghost" id="btn-gasto" type="button">Gastei</button>
+      <button class="btn-ghost" id="btn-entrada" type="button">Recebi</button>
       <button class="btn-ghost" id="btn-investir" type="button">Investir</button>
-      <button class="btn-ghost" id="btn-ajuste" type="button">Ajustar</button>
+      <button class="btn-ghost" id="btn-compra" type="button">Revenda</button>
     </div>
 
     <div class="card form" id="form-inv" hidden>
@@ -569,6 +578,7 @@
         <button type="button" data-tipo="entrada" aria-pressed="false">Entrou dinheiro</button>
         <button type="button" data-tipo="ajuste" aria-pressed="false">Saldo real</button>
       </div>
+      <div class="chips" role="group" aria-label="Categoria do gasto" id="mv-cats"></div>
       <div class="grid2">
         <label class="field" for="mv-valor"><span id="mv-valor-lbl">Valor do gasto</span>
           <span class="input" id="mv-valor-box"><em>R$</em><input id="mv-valor" type="text" inputmode="decimal" autocomplete="off"></span>
@@ -586,6 +596,11 @@
         <button class="btn-primary" id="mv-salvar" type="button">Salvar</button>
         <button class="btn-ghost" id="mv-cancelar" type="button">Cancelar</button>
       </div>
+    </div>
+
+    <div class="card" id="mim-gastos-card" hidden>
+      <h3 id="mim-gastos-titulo">Gastos do mês</h3>
+      <div class="panel" id="mim-gastos"></div>
     </div>
 
     <div class="card" id="mim-revendas-card">
@@ -1447,7 +1462,7 @@
     cfg: null, receb: [], checkins: [], mercado: null, hist: [], revendas: [], movs: [], aportes: [],
     loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false },
     distTocado: false, confirmarAp: null,
-    confirmarRv: null, confirmarMov: null, vendaId: null, movTipo: 'gasto',
+    confirmarRv: null, confirmarMov: null, vendaId: null, movTipo: 'gasto', movCat: null,
     tab: 'mes', mes: mesDe(hojeISO()),
     form: { tipo: 'adiantamento', editId: null, mimTocado: false, criadoEm: null },
     confirmar: null,
@@ -2538,7 +2553,7 @@
     if (S.semDb) { box.innerHTML = '<div class="card empty"><p>Não deu para abrir seus dados aqui. Abra este app pelo Claude, entrando com a sua conta.</p></div>'; return; }
     if (!S.loaded.receb || !S.loaded.revendas || !S.loaded.movs || !S.loaded.aportes) return;
     const s = saldoMim();
-    let html = '<div class="card"><span class="hint">Seu saldo para gastar</span><span class="big' + (s.disponivel < 0 ? ' neg' : '') + '">' + R(s.disponivel) + '</span>';
+    let html = '<div class="card"><div class="saldo-top"><span class="hint">Seu saldo para gastar</span><button class="link" type="button" data-act="editar-saldo">Editar</button></div><span class="big' + (s.disponivel < 0 ? ' neg' : '') + '">' + R(s.disponivel) + '</span>';
     if (s.estoque > 0) html += '<span class="hint">+ ' + R(s.estoque) + ' em produtos para revender · total ' + R(s.total) + '</span>';
     html += '<div class="facts"><div class="fact"><span>Veio do salário</span><b class="t-mine">' + RS(s.doSalario) + '</b></div>';
     if (s.nVendas) html += '<div class="fact"><span>Lucro com revendas<small>' + s.nVendas + (s.nVendas === 1 ? ' venda' : ' vendas') + '</small></span><b class="' + (s.lucro >= 0 ? 't-invest' : 'neg') + '">' + RS(s.lucro) + '</b></div>';
@@ -2549,6 +2564,7 @@
     if (s.ajustes) html += '<div class="fact"><span>Ajustes de saldo</span><b>' + RS(s.ajustes) + '</b></div>';
     html += '</div></div>';
     box.innerHTML = html;
+    renderGastos();
     renderRevendas();
     renderVale();
     renderExtrato();
@@ -2562,7 +2578,7 @@
       return String(b.vendaData || b.compraData).localeCompare(String(a.vendaData || a.compraData));
     });
     if (!lista.length) {
-      box.innerHTML = '<p class="hint">Nenhuma revenda ainda. Quando comprar algo para revender, toque em Comprei para revender; depois, em Vendi.</p>';
+      box.innerHTML = '<p class="hint">Nenhuma revenda ainda. Quando comprar algo para revender, toque em Revenda.</p>';
       return;
     }
     box.innerHTML = lista.map((r) => {
@@ -2636,6 +2652,29 @@
       '</div><p class="hint">' + (valeu ? 'Vale a pena: a revenda ganha do CDI por ' + R(lucro - cdiGanho) + '.' : 'Não compensa: deixar no CDI renderia ' + R(cdiGanho - lucro) + ' a mais.') + '</p>';
   }
 
+  function renderGastos() {
+    const card = $('#mim-gastos-card');
+    const mes = mesDe(hojeISO());
+    const doMes = (m) => S.movs.filter((x) => x.tipo === 'gasto' && mesDe(x.data) === m);
+    const lista = doMes(mes);
+    if (!lista.length) { card.hidden = true; return; }
+    card.hidden = false;
+    $('#mim-gastos-titulo').textContent = 'Gastos de ' + nomeMes(mes, false);
+    const porCat = {};
+    lista.forEach((m) => { const c = m.categoria || 'outro'; porCat[c] = (porCat[c] || 0) + (Number(m.valor) || 0); });
+    const total = Object.values(porCat).reduce((a, v) => a + v, 0);
+    const linhas = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
+    const maior = linhas[0][1] || 1;
+    const passado = doMes(addMes(mes, -1)).reduce((a, m) => a + (Number(m.valor) || 0), 0);
+    const meta = plano(S.cfg).meta;
+    let html = '<div class="cat-total"><b>' + R(total) + '</b><small>' + (meta > 0 ? 'de ' + R(meta) + ' que ficam com você no mês' : '') + '</small></div>';
+    if (meta > 0) html += '<div class="meter" aria-hidden="true"><i style="width:' + Math.min(100, total / meta * 100).toFixed(1) + '%;background:' + (total > meta ? 'var(--danger)' : 'var(--mine)') + '"></i></div>';
+    html += '<div class="cats">' + linhas.map(([c, v]) =>
+      '<div class="cat-row"><span>' + esc(nomeCat(c)) + '</span><span class="cmp-bar"><i style="width:' + (v / maior * 100).toFixed(1) + '%;background:var(--mine)"></i></span>' +
+      '<b>' + R(v) + '<small>' + pct1.format(v / total) + '</small></b></div>').join('') + '</div>';
+    if (passado > 0) html += '<p class="hint">Em ' + esc(nomeMes(addMes(mes, -1), false)) + ' foram ' + R(passado) + '.</p>';
+    $('#mim-gastos').innerHTML = html;
+  }
   function renderExtrato() {
     const box = $('#mim-extrato');
     const ev = [];
@@ -2645,7 +2684,7 @@
       if (vendida(r)) ev.push({ data: r.vendaData, ord: r.vendidoEm || '', desc: 'Venda: ' + r.nome, sub: 'Revenda', valor: liquidoVenda(r) });
     });
     S.movs.forEach((m) => {
-      const nome = m.tipo === 'gasto' ? 'Gasto' : m.tipo === 'entrada' ? 'Entrada' : 'Ajuste de saldo';
+      const nome = m.tipo === 'gasto' ? (m.categoria ? nomeCat(m.categoria) : 'Gasto') : m.tipo === 'entrada' ? 'Entrada' : 'Ajuste de saldo';
       ev.push({ data: m.data, ord: m.criadoEm || '', desc: m.descricao ? nome + ': ' + m.descricao : nome, sub: m.tipo === 'ajuste' && m.alvo != null ? 'Saldo acertado para ' + R(m.alvo) : '', valor: m.tipo === 'gasto' ? -Number(m.valor) : Number(m.valor), mov: m.id });
     });
     S.aportes.filter((a) => a.origem === 'mim').forEach((a) => {
@@ -2818,8 +2857,15 @@
       toast('Venda salva. ' + (lucro >= 0 ? 'Lucro de ' + R(lucro) + '.' : 'Prejuízo de ' + R(-lucro) + '.'));
     } catch (e) { erro(msgErro(e)); } finally { btn.disabled = false; }
   }
+  const CATS = [['uber', 'Uber'], ['ifood', 'iFood'], ['restaurante', 'Restaurante'], ['mercado', 'Mercado'], ['lazer', 'Lazer'], ['outro', 'Outro']];
+  const nomeCat = (id) => (CATS.find((c) => c[0] === id) || [null, 'Outro'])[1];
+  function marcarCat(cat) {
+    S.movCat = cat;
+    $$('#mv-cats button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cat === cat)));
+  }
   function marcarMov(tipo) {
     S.movTipo = tipo;
+    $('#mv-cats').hidden = tipo !== 'gasto';
     $$('#mv-tipos button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tipo === tipo)));
     $('#mv-titulo').textContent = tipo === 'gasto' ? 'Lançar gasto' : tipo === 'entrada' ? 'Entrou dinheiro' : 'Ajustar saldo';
     $('#mv-valor-lbl').textContent = tipo === 'gasto' ? 'Valor do gasto' : tipo === 'entrada' ? 'Valor que entrou' : 'Quanto você tem de verdade';
@@ -2836,14 +2882,17 @@
   }
   function abrirMov(tipo) {
     fecharFormsMim();
-    $('#mv-valor').value = '';
+    // no ajuste, o campo já vem com o saldo de agora para você só corrigir
+    $('#mv-valor').value = tipo === 'ajuste' ? num2.format(saldoMim().disponivel) : '';
     $('#mv-desc').value = '';
     $('#mv-data').value = hojeISO();
     $('#mv-erro').hidden = true;
+    marcarCat(null);
     marcarMov(tipo);
     $('#form-mov').hidden = false;
     rolar($('#form-mov'));
     $('#mv-valor').focus();
+    if (tipo === 'ajuste') $('#mv-valor').select();
   }
   async function salvarMov() {
     const erro = (m) => { $('#mv-erro').textContent = m; $('#mv-erro').hidden = false; };
@@ -2860,6 +2909,7 @@
     } else {
       if (!(v > 0)) return erro('Coloque o valor.');
       doc = { tipo: S.movTipo, valor: r2(v), data, descricao };
+      if (S.movTipo === 'gasto') doc.categoria = S.movCat || 'outro';
     }
     doc.criadoEm = new Date().toISOString();
     const btn = $('#mv-salvar');
@@ -3091,7 +3141,10 @@
 
   $('#btn-compra').addEventListener('click', abrirCompra);
   $('#btn-gasto').addEventListener('click', () => abrirMov('gasto'));
-  $('#btn-ajuste').addEventListener('click', () => abrirMov('ajuste'));
+  $('#btn-entrada').addEventListener('click', () => abrirMov('entrada'));
+  $('#mim-saldo').addEventListener('click', (ev) => { if (ev.target.closest('[data-act="editar-saldo"]')) abrirMov('ajuste'); });
+  $('#mv-cats').innerHTML = CATS.map(([id, nome]) => '<button class="pill" type="button" data-cat="' + id + '" aria-pressed="false">' + nome + '</button>').join('');
+  $$('#mv-cats button').forEach((b) => b.addEventListener('click', () => { marcarCat(b.dataset.cat); $('#mv-valor').focus(); }));
   $('#btn-investir').addEventListener('click', abrirInvestir);
   $('#iv-cancelar').addEventListener('click', fecharFormsMim);
   $('#iv-salvar').addEventListener('click', salvarInvestir);
