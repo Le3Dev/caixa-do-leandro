@@ -315,6 +315,9 @@
   .big.neg, .neg { color: var(--danger); }
   .chip.bad { color: var(--danger); border-color: currentColor; }
   .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .btn-row.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .btn-row.tres .btn-ghost { padding-inline: 6px; }
+  #iv-tudo { align-self: flex-start; margin-top: -6px; }
   .rv { display: flex; flex-direction: column; gap: 6px; padding-block: 12px; border-bottom: 1px solid var(--line); }
   .rv:first-child { padding-top: 0; }
   .rv:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -486,9 +489,32 @@
       <div class="card empty"><p>Carregando seu saldo…</p></div>
     </div>
     <button class="btn-primary" id="btn-compra" type="button">Comprei para revender</button>
-    <div class="btn-row">
-      <button class="btn-ghost" id="btn-gasto" type="button">Lançar gasto</button>
-      <button class="btn-ghost" id="btn-ajuste" type="button">Ajustar saldo</button>
+    <div class="btn-row tres">
+      <button class="btn-ghost" id="btn-gasto" type="button">Gastei</button>
+      <button class="btn-ghost" id="btn-investir" type="button">Investir</button>
+      <button class="btn-ghost" id="btn-ajuste" type="button">Ajustar</button>
+    </div>
+
+    <div class="card form" id="form-inv" hidden>
+      <h3>Investir da sua parte</h3>
+      <div class="grid2">
+        <label class="field" for="iv-valor">Quanto
+          <span class="input" id="iv-valor-box"><em>R$</em><input id="iv-valor" type="text" inputmode="decimal" autocomplete="off"></span>
+        </label>
+        <label class="field" for="iv-data">Data
+          <input id="iv-data" type="date" min="2020-01-01" max="2099-12-31">
+        </label>
+      </div>
+      <button class="link" id="iv-tudo" type="button">Usar tudo</button>
+      <label class="field" for="iv-conta">Em qual aplicação
+        <select id="iv-conta"></select>
+      </label>
+      <div class="preview" id="iv-preview"><p class="hint">—</p></div>
+      <p class="err" id="iv-erro" hidden></p>
+      <div class="actions">
+        <button class="btn-primary" id="iv-salvar" type="button">Investir</button>
+        <button class="btn-ghost" id="iv-cancelar" type="button">Cancelar</button>
+      </div>
     </div>
 
     <div class="card form" id="form-compra" hidden>
@@ -1696,7 +1722,7 @@
   /* Valor marcado como investido no Mês que ainda não foi colocado numa aplicação. */
   function paraDistribuir() {
     const marcado = S.receb.filter((r) => r.investido).reduce((a, r) => a + (Number(r.investir) || 0), 0);
-    const aplicado = S.aportes.reduce((a, x) => a + (Number(x.valor) || 0), 0);
+    const aplicado = S.aportes.filter((x) => x.origem !== 'mim').reduce((a, x) => a + (Number(x.valor) || 0), 0);
     return r2(Math.max(0, marcado - aplicado));
   }
 
@@ -2359,7 +2385,7 @@
     if (!lista.length) { box.innerHTML = ''; return; }
     const nomeDe = (id) => { const c = ((S.cfg && S.cfg.contas) || []).find((x) => x.id === id); return c ? c.nome : 'Aplicação removida'; };
     box.innerHTML = '<p class="sub-h">Aplicado desde o check-in</p>' + lista.map((a) =>
-      '<div class="ext"><span class="ext-desc">' + esc(nomeDe(a.contaId)) + '<small>' + esc(dataCurta(a.data)) + (a.moeda === 'USD' && a.valorMoeda ? ' · US$ ' + num2.format(a.valorMoeda) : '') + '</small></span>' +
+      '<div class="ext"><span class="ext-desc">' + esc(nomeDe(a.contaId)) + '<small>' + esc(dataCurta(a.data)) + (a.origem === 'mim' ? ' · da sua parte' : '') + (a.moeda === 'USD' && a.valorMoeda ? ' · US$ ' + num2.format(a.valorMoeda) : '') + '</small></span>' +
       '<span class="ext-val t-invest">' + RS(a.valor) + '<button class="link danger" type="button" data-ap="' + esc(a.id) + '">' + (S.confirmarAp === a.id ? 'Confirmar' : 'Desfazer') + '</button></span></div>').join('');
   }
 
@@ -2485,8 +2511,9 @@
       if (vendida(r)) { vendas += liquidoVenda(r); lucro += liquidoVenda(r) - custo; nVendas++; }
       else estoque += custo;
     });
-    const disponivel = r2(doSalario + entradas - gastos + ajustes - compras + vendas);
-    return { doSalario, entradas: r2(entradas), gastos: r2(gastos), ajustes: r2(ajustes), compras, vendas, estoque: r2(estoque), lucro: r2(lucro), nVendas, disponivel, total: r2(disponivel + estoque) };
+    const investidos = r2(S.aportes.filter((x) => x.origem === 'mim').reduce((a, x) => a + (Number(x.valor) || 0), 0));
+    const disponivel = r2(doSalario + entradas - gastos + ajustes - compras + vendas - investidos);
+    return { doSalario, entradas: r2(entradas), gastos: r2(gastos), ajustes: r2(ajustes), investidos, compras, vendas, estoque: r2(estoque), lucro: r2(lucro), nVendas, disponivel, total: r2(disponivel + estoque) };
   }
 
   /* Compara uma revenda com o mesmo dinheiro deixado no CDI pelo mesmo tempo. */
@@ -2509,7 +2536,7 @@
   function renderMim() {
     const box = $('#mim-saldo');
     if (S.semDb) { box.innerHTML = '<div class="card empty"><p>Não deu para abrir seus dados aqui. Abra este app pelo Claude, entrando com a sua conta.</p></div>'; return; }
-    if (!S.loaded.receb || !S.loaded.revendas || !S.loaded.movs) return;
+    if (!S.loaded.receb || !S.loaded.revendas || !S.loaded.movs || !S.loaded.aportes) return;
     const s = saldoMim();
     let html = '<div class="card"><span class="hint">Seu saldo para gastar</span><span class="big' + (s.disponivel < 0 ? ' neg' : '') + '">' + R(s.disponivel) + '</span>';
     if (s.estoque > 0) html += '<span class="hint">+ ' + R(s.estoque) + ' em produtos para revender · total ' + R(s.total) + '</span>';
@@ -2517,6 +2544,7 @@
     if (s.nVendas) html += '<div class="fact"><span>Lucro com revendas<small>' + s.nVendas + (s.nVendas === 1 ? ' venda' : ' vendas') + '</small></span><b class="' + (s.lucro >= 0 ? 't-invest' : 'neg') + '">' + RS(s.lucro) + '</b></div>';
     if (s.estoque > 0) html += '<div class="fact"><span>Em produtos agora<small>Volta ao saldo quando vender</small></span><b>' + RS(-s.estoque) + '</b></div>';
     if (s.gastos) html += '<div class="fact"><span>Gastos</span><b>' + RS(-s.gastos) + '</b></div>';
+    if (s.investidos) html += '<div class="fact"><span>Você investiu</span><b>' + RS(-s.investidos) + '</b></div>';
     if (s.entradas) html += '<div class="fact"><span>Outras entradas</span><b>' + RS(s.entradas) + '</b></div>';
     if (s.ajustes) html += '<div class="fact"><span>Ajustes de saldo</span><b>' + RS(s.ajustes) + '</b></div>';
     html += '</div></div>';
@@ -2620,17 +2648,88 @@
       const nome = m.tipo === 'gasto' ? 'Gasto' : m.tipo === 'entrada' ? 'Entrada' : 'Ajuste de saldo';
       ev.push({ data: m.data, ord: m.criadoEm || '', desc: m.descricao ? nome + ': ' + m.descricao : nome, sub: m.tipo === 'ajuste' && m.alvo != null ? 'Saldo acertado para ' + R(m.alvo) : '', valor: m.tipo === 'gasto' ? -Number(m.valor) : Number(m.valor), mov: m.id });
     });
+    S.aportes.filter((a) => a.origem === 'mim').forEach((a) => {
+      const c = ((S.cfg && S.cfg.contas) || []).find((x) => x.id === a.contaId);
+      ev.push({ data: a.data, ord: a.criadoEm || '', desc: 'Investiu: ' + (c ? c.nome : 'aplicação removida'), sub: c ? c.lugar : '', valor: -Number(a.valor), ap: a.id });
+    });
     if (!ev.length) { box.innerHTML = '<p class="hint">Nada por aqui ainda.</p>'; return; }
     ev.sort((a, b) => (b.data + b.ord).localeCompare(a.data + a.ord));
     box.innerHTML = ev.slice(0, 40).map((e) =>
       '<div class="ext"><span class="ext-desc">' + esc(e.desc) + '<small>' + esc(dataCurta(e.data)) + (e.sub ? ' · ' + esc(e.sub) : '') + '</small></span>' +
       '<span class="ext-val ' + (e.valor >= 0 ? 't-invest' : '') + '">' + RS(e.valor) +
-      (e.mov ? '<button class="link danger" type="button" data-mov="' + esc(e.mov) + '">' + (S.confirmarMov === e.mov ? 'Confirmar' : 'Excluir') + '</button>' : '') + '</span></div>').join('') +
+      (e.mov ? '<button class="link danger" type="button" data-mov="' + esc(e.mov) + '">' + (S.confirmarMov === e.mov ? 'Confirmar' : 'Excluir') + '</button>' : '') +
+      (e.ap ? '<button class="link danger" type="button" data-ap="' + esc(e.ap) + '">' + (S.confirmarAp === e.ap ? 'Confirmar' : 'Desfazer') + '</button>' : '') + '</span></div>').join('') +
       (ev.length > 40 ? '<p class="hint">Mostrando os 40 lançamentos mais recentes.</p>' : '');
   }
 
   /* formulários da aba Para mim */
-  function fecharFormsMim() { ['#form-compra', '#form-venda', '#form-mov'].forEach((s) => { $(s).hidden = true; }); }
+  function fecharFormsMim() { ['#form-compra', '#form-venda', '#form-mov', '#form-inv'].forEach((s) => { $(s).hidden = true; }); }
+  function abrirInvestir() {
+    if (!S.cfg || !((S.cfg.contas || []).some((c) => c.tipo !== 'conta'))) { abrirAba('ajustes'); toast('Primeiro cadastre suas aplicações em Ajustes.'); return; }
+    fecharFormsMim();
+    const sel = $('#iv-conta');
+    const ops = (S.cfg.contas || []).filter((c) => c.tipo !== 'conta');
+    const rc = reservaCfg();
+    const e = estimativa(hojeISO());
+    const pr = e ? projReserva(e) : null;
+    const resId = rc.valor > 0 && pr && !pr.batida ? rc.contaId : '';
+    sel.innerHTML = ops.map((c) => {
+      const r = rendaDe(c.id);
+      return '<option value="' + esc(c.id) + '">' + esc(c.nome) + ' · ' + esc(c.lugar) + (r ? ' (' + esc(r.rotulo.split(' · ')[0]) + ')' : '') + (c.id === resId ? ' · reserva' : '') + '</option>';
+    }).join('');
+    sel.value = resId || ops[0].id;
+    $('#iv-valor').value = '';
+    $('#iv-data').value = hojeISO();
+    $('#iv-erro').hidden = true;
+    previewInvestir();
+    $('#form-inv').hidden = false;
+    rolar($('#form-inv'));
+    $('#iv-valor').focus();
+  }
+  function previewInvestir() {
+    const s = saldoMim();
+    const v = parseNum($('#iv-valor').value);
+    const c = ((S.cfg && S.cfg.contas) || []).find((x) => x.id === $('#iv-conta').value);
+    $('#iv-tudo').textContent = 'Usar tudo (' + R(Math.max(0, s.disponivel)) + ')';
+    $('#iv-tudo').hidden = !(s.disponivel > 0);
+    const ok = v > 0;
+    $('#iv-valor-box').classList.toggle('bad', ok && v > s.disponivel + 0.005);
+    if (!ok) { $('#iv-preview').innerHTML = '<p class="hint">Você tem ' + R(s.disponivel) + ' para você.</p>'; return; }
+    const r = c ? rendaDe(c.id) : null;
+    const porMes = r ? v * (Math.pow(1 + r.anual, 1 / 12) - 1) : 0;
+    $('#iv-preview').innerHTML = '<div class="facts">' +
+      '<div class="fact"><span>Seu saldo para gastar fica</span><b' + (s.disponivel - v < -0.005 ? ' class="neg"' : '') + '>' + R(s.disponivel - v) + '</b></div>' +
+      (porMes > 0 ? '<div class="fact"><span>Rende por mês' + (c ? '<small>' + esc(c.nome) + ' · ' + esc(r.rotulo.split(' · ')[0]) + '</small>' : '') + '</span><b class="t-invest">' + RS(porMes) + '</b></div>' : '') +
+      '</div>';
+  }
+  async function salvarInvestir() {
+    const erro = (m) => { $('#iv-erro').textContent = m; $('#iv-erro').hidden = false; };
+    $('#iv-erro').hidden = true;
+    const s = saldoMim();
+    const valor = parseNum($('#iv-valor').value);
+    const data = $('#iv-data').value;
+    const contaId = $('#iv-conta').value;
+    const c = ((S.cfg && S.cfg.contas) || []).find((x) => x.id === contaId);
+    if (!c) return erro('Escolha a aplicação.');
+    if (!(valor > 0)) return erro('Coloque quanto vai investir.');
+    if (valor > s.disponivel + 0.005) return erro('Você tem ' + R(s.disponivel) + ' para você.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return erro('Escolha a data.');
+    const doc = { data, valor: r2(valor), contaId, moeda: c.moeda, origem: 'mim', criadoEm: new Date().toISOString() };
+    if (c.moeda === 'USD') {
+      const ck = S.checkins[S.checkins.length - 1];
+      const cot = ck ? dolarPara(ck, data).v : Number(S.mercado && S.mercado.dolar) || 0;
+      if (!(cot > 0)) return erro('Sem cotação do dólar para converter.');
+      doc.valorMoeda = Math.round(valor / cot * 100) / 100;
+      doc.cotacao = cot;
+    }
+    const btn = $('#iv-salvar');
+    btn.disabled = true;
+    try {
+      await S.db.collection('aportes').doc().set(doc);
+      fecharFormsMim();
+      toast(R(valor) + ' da sua parte foi para ' + c.nome + '.');
+    } catch (e) { erro(msgErro(e)); } finally { btn.disabled = false; }
+  }
   function abrirCompra() {
     fecharFormsMim();
     $('#cp-nome').value = '';
@@ -2993,6 +3092,12 @@
   $('#btn-compra').addEventListener('click', abrirCompra);
   $('#btn-gasto').addEventListener('click', () => abrirMov('gasto'));
   $('#btn-ajuste').addEventListener('click', () => abrirMov('ajuste'));
+  $('#btn-investir').addEventListener('click', abrirInvestir);
+  $('#iv-cancelar').addEventListener('click', fecharFormsMim);
+  $('#iv-salvar').addEventListener('click', salvarInvestir);
+  ['#iv-valor', '#iv-conta'].forEach((s) => $(s).addEventListener('input', previewInvestir));
+  $('#iv-valor').addEventListener('blur', () => { const v = parseNum($('#iv-valor').value); if (v > 0) $('#iv-valor').value = num2.format(v); });
+  $('#iv-tudo').addEventListener('click', () => { const d = saldoMim().disponivel; if (d > 0) { $('#iv-valor').value = num2.format(d); previewInvestir(); } });
   ['#cp-cancelar', '#vd-cancelar', '#mv-cancelar'].forEach((s) => $(s).addEventListener('click', fecharFormsMim));
   $('#cp-salvar').addEventListener('click', salvarCompra);
   $('#vd-salvar').addEventListener('click', salvarVenda);
@@ -3016,6 +3121,14 @@
     }
   });
   $('#mim-extrato').addEventListener('click', async (ev) => {
+    const ap = ev.target.closest('[data-ap]');
+    if (ap) {
+      const id = ap.dataset.ap;
+      if (S.confirmarAp !== id) { S.confirmarAp = id; renderExtrato(); return; }
+      S.confirmarAp = null;
+      try { await S.db.doc('aportes/' + id).delete(); toast('Desfeito. O valor voltou para o seu saldo.'); } catch (e) { toast(msgErro(e)); }
+      return;
+    }
     const btn = ev.target.closest('[data-mov]');
     if (!btn) return;
     const id = btn.dataset.mov;
@@ -3032,7 +3145,8 @@
     const id = btn.dataset.ap;
     if (S.confirmarAp !== id) { S.confirmarAp = id; renderPatrimonio(); return; }
     S.confirmarAp = null;
-    try { await S.db.doc('aportes/' + id).delete(); toast('Aplicação desfeita. O valor volta para distribuir.'); } catch (e) { toast(msgErro(e)); }
+    const daSuaParte = (S.aportes.find((x) => x.id === id) || {}).origem === 'mim';
+    try { await S.db.doc('aportes/' + id).delete(); toast(daSuaParte ? 'Desfeito. O valor voltou para o seu saldo.' : 'Aplicação desfeita. O valor volta para distribuir.'); } catch (e) { toast(msgErro(e)); }
   });
 
   $('#btn-checkin').addEventListener('click', abrirCheckin);
