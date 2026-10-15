@@ -1,6 +1,7 @@
-import { json, falha, exigirLogin, lerEstado } from './_lib.js';
+import { json, falha, exigirLogin, renovarLogin, lerEstado, versaoEstado } from './_lib.js';
 
 // GET /api/estado → todos os dados do app (precisa estar logado)
+// GET /api/estado?v=<versão> → { mesmo: true } se nada mudou desde essa versão (não baixa os dados)
 // GET /api/estado?diag=1 → só diz se a configuração está certa, sem mostrar dados
 export async function GET(request) {
   const url = new URL(request.url);
@@ -23,8 +24,11 @@ export async function GET(request) {
   }
   try {
     exigirLogin(request);
-    const { estado } = await lerEstado();
-    return json({ cols: estado.cols || {}, atualizadoEm: estado.atualizadoEm || null });
+    const renovar = renovarLogin(request);
+    const v = url.searchParams.get('v');
+    if (v && (await versaoEstado()) === v) return json({ mesmo: true }, 200, renovar);
+    const { estado, etag } = await lerEstado();
+    return json({ cols: estado.cols || {}, atualizadoEm: estado.atualizadoEm || null, versao: etag }, 200, renovar);
   } catch (e) {
     return falha(e);
   }

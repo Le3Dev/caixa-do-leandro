@@ -39,6 +39,10 @@ export async function lerPush() {
 }
 
 export async function inscrever(sub, aparelho) {
+  // já inscrito com as mesmas chaves: não grava de novo
+  const { subs } = await lerPush();
+  const atual = subs[idDe(sub.endpoint)];
+  if (atual && atual.keys && atual.keys.p256dh === sub.keys.p256dh && atual.keys.auth === sub.keys.auth) return;
   await alterar((e) => {
     e.subs = e.subs || {};
     const id = idDe(sub.endpoint);

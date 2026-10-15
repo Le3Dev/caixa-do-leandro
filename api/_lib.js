@@ -73,8 +73,28 @@ export function autorizado(request) {
 export function exigirLogin(request) {
   if (!autorizado(request)) throw new ErroPedido('login', 401);
 }
+/* O login vale um ano a partir do último uso: depois de 30 dias, o cookie é trocado por um novo. */
+export function renovarLogin(request) {
+  const m = (request.headers.get('cookie') || '').match(/(?:^|;\s*)caixa_sess=v1\.(\d+)\./);
+  const exp = m ? Number(m[1]) : 0;
+  return exp && exp - Date.now() < (UM_ANO - 30 * 24 * 60 * 60) * 1000 ? { 'set-cookie': cookieDeSessao() } : {};
+}
 
 /* ---------- dados ---------- */
+/* Só a versão do arquivo (1 operação no Blob), para saber se algo mudou sem baixar tudo. */
+export async function versaoEstado(arquivo = ARQUIVO) {
+  try {
+    return (await head(arquivo)).etag;
+  } catch (e) {
+    if (e instanceof BlobNotFoundError) return null;
+    throw e;
+  }
+}
+/* Uma cópia por mês em caixa/backups/AAAA-MM.json, sobrescrita a cada dia: sobra o último estado de cada mês. */
+export async function guardarCopia(estado) {
+  const mes = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()).slice(0, 7);
+  await put('caixa/backups/' + mes + '.json', JSON.stringify(estado), { access: 'private', allowOverwrite: true, addRandomSuffix: false, contentType: 'application/json' });
+}
 // A versão (etag) vem do head(), que é a mesma que o put() confere; a que vem no download do get()
 // pode chegar em outro formato e fazer toda gravação parecer conflito.
 // Lê a versão antes do conteúdo: se alguém gravar no meio, o put() falha e tenta de novo.

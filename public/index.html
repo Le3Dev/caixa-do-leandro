@@ -954,8 +954,11 @@
   }
   const avisar = () => ouvintes.forEach(entregar);
 
-  async function carregar() {
-    const j = await api('/api/estado');
+  let versao = null;
+  async function carregar(soSeMudou) {
+    const j = await api('/api/estado' + (soSeMudou && versao ? '?v=' + encodeURIComponent(versao) : ''));
+    if (j.mesmo) return j;
+    versao = j.versao || null;
     cols = j.cols || {};
     aviso('');
     resolverPronto();
@@ -983,6 +986,7 @@
   };
   window.caixaImportar = async (dados) => {
     const j = await api('/api/importar', { method: 'POST', body: JSON.stringify(dados) });
+    versao = null;
     cols = j.cols || {};
     avisar();
   };
@@ -1028,6 +1032,7 @@
     const tarefa = fila.then(async () => {
       try {
         const j = await api('/api/escrever', { method: 'POST', body: JSON.stringify({ ops }) });
+        versao = null;
         cols = j.cols || {};
         avisar();
       } catch (e) {
@@ -1080,10 +1085,14 @@
   window.claude = { use: async (nome) => { if (nome !== 'db') return null; await pronto; return db; } };
 
   // busca de novo ao voltar para o app e a cada minuto com ele aberto
-  const recarregar = () => { if (cols && !pendentes && document.visibilityState === 'visible') carregar().catch(() => {}); };
+  // Ao voltar para o app, confere se algo mudou (só a versão, sem baixar tudo).
+  // Com o app aberto e em uso, confere a cada 5 minutos; parado há 15 minutos, para de conferir.
+  const recarregar = () => { if (cols && !pendentes && document.visibilityState === 'visible') carregar(true).catch(() => {}); };
   document.addEventListener('visibilitychange', recarregar);
   window.addEventListener('focus', recarregar);
-  setInterval(recarregar, 60000);
+  let ultimoToque = Date.now();
+  ['pointerdown', 'keydown', 'touchstart'].forEach((t) => document.addEventListener(t, () => { ultimoToque = Date.now(); }, { passive: true }));
+  setInterval(() => { if (Date.now() - ultimoToque < 15 * 60 * 1000) recarregar(); }, 5 * 60 * 1000);
 
   // primeira carga; sem internet, tenta de novo algumas vezes
   let tentativas = 0;
@@ -3452,14 +3461,19 @@
         botoes(true, false);
       }
     }
-    async function inscrever() {
+    const lembrada = () => { try { return localStorage.getItem('caixa-push') || ''; } catch (e) { return ''; } };
+    const lembrar = (v) => { try { if (v) localStorage.setItem('caixa-push', v); else localStorage.removeItem('caixa-push'); } catch (e) { /* sem armazenamento */ } };
+    async function inscrever(forcar) {
       const r = await pronto || await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready;
       const chave = bytes(await chaveServidor());
       let sub = await r.pushManager.getSubscription();
       if (sub && !iguais(sub.options && sub.options.applicationServerKey, chave)) { await sub.unsubscribe(); sub = null; }
       if (!sub) sub = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: chave });
-      await post({ acao: 'assinar', sub: sub.toJSON() });
+      if (forcar || lembrada() !== sub.endpoint) {
+        await post({ acao: 'assinar', sub: sub.toJSON() });
+        lembrar(sub.endpoint);
+      }
       return sub;
     }
     bAtivar.addEventListener('click', async () => {
@@ -3468,7 +3482,7 @@
         // o pedido de permissão precisa sair direto do toque
         const perm = await Notification.requestPermission();
         if (perm !== 'granted') return;
-        await inscrever();
+        await inscrever(true);
         await post({ acao: 'teste' });
         toast('Notificações ligadas. Mandei uma de teste.');
       } catch (e) {
@@ -3481,7 +3495,7 @@
     bTeste.addEventListener('click', async () => {
       bTeste.disabled = true;
       try {
-        await inscrever();
+        await inscrever(true);
         const r = await post({ acao: 'teste' });
         toast(r.enviados ? 'Teste enviado.' : 'Não consegui enviar. Desative e ative de novo.');
       } catch (e) { toast('Não consegui enviar o teste.'); } finally { bTeste.disabled = false; }
@@ -3492,6 +3506,7 @@
         const r = await pronto;
         const sub = r ? await r.pushManager.getSubscription() : null;
         if (sub) { await post({ acao: 'sair', endpoint: sub.endpoint }).catch(() => {}); await sub.unsubscribe(); }
+        lembrar('');
         toast('Notificações desligadas neste aparelho.');
       } catch (e) { toast('Não consegui desligar.'); } finally { bDesativar.disabled = false; atualizar(); }
     });

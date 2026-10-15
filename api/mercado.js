@@ -1,4 +1,4 @@
-import { json, falha, autorizado, alterar, lerEstado, ErroPedido } from './_lib.js';
+import { json, falha, autorizado, alterar, lerEstado, guardarCopia, ErroPedido } from './_lib.js';
 
 // Dólar PTAX de venda, CDI anualizado, Selic meta e IPCA de 12 meses, direto do Banco Central.
 // GET  /api/mercado → chamado pelo cron da Vercel todo dia útil (Authorization: Bearer CRON_SECRET)
@@ -61,6 +61,8 @@ async function atualizar() {
       }
     }
   });
+  // aproveita a passada diária para guardar a cópia do mês
+  try { await guardarCopia(estado); } catch (e) { console.error('cópia', e); }
   return { atual: estado.cols.mercado.atual, falhas };
 }
 

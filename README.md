@@ -25,3 +25,8 @@ Opcionais: `APP_SECRET` (chave da sessão; sem ela, é derivada da senha) e `CRO
 (protege a chamada do cron).
 
 Para conferir a configuração: `https://SEU-DOMINIO/api/estado?diag=1`.
+
+## Cópias automáticas
+Todo dia útil, junto com a atualização do dólar e do CDI, o app grava uma cópia dos dados em
+`caixa/backups/AAAA-MM.json` no Blob (uma por mês, com o último estado do mês). Para restaurar,
+baixe o arquivo no painel da Vercel (Storage → Blob) e use Ajustes → Importar backup.
