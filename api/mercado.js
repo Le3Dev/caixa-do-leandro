@@ -34,7 +34,7 @@ async function serie(codigo, n) {
 
 async function atualizar() {
   const [dolar, cdi, selic, ipca, ipcaMes] = await Promise.allSettled([
-    serie(SERIES.dolar, 10), serie(SERIES.cdi, 10), serie(SERIES.selic, 1), serie(SERIES.ipca, 1), serie(SERIES.ipcaMes, 36),
+    serie(SERIES.dolar, 10), serie(SERIES.cdi, 10), serie(SERIES.selic, 1), serie(SERIES.ipca, 1), serie(SERIES.ipcaMes, 20),
   ]);
   const ok = (r) => (r.status === 'fulfilled' ? r.value : null);
   const falhas = Object.keys(SERIES).filter((k, i) => [dolar, cdi, selic, ipca, ipcaMes][i].status !== 'fulfilled');
