@@ -4,7 +4,7 @@ import { json, falha, autorizado, alterar, lerEstado, guardarCopia, ErroPedido }
 // GET  /api/mercado → chamado pelo cron da Vercel todo dia útil (Authorization: Bearer CRON_SECRET)
 // POST /api/mercado → botão "Atualizar agora" no app (precisa estar logado)
 
-const SERIES = { dolar: 1, cdi: 4389, selic: 432, ipca: 13522 };
+const SERIES = { dolar: 1, cdi: 4389, selic: 432, ipca: 13522, ipcaMes: 433 };
 
 const brParaIso = (d) => {
   const [dia, mes, ano] = String(d).split('/');
@@ -33,22 +33,24 @@ async function serie(codigo, n) {
 }
 
 async function atualizar() {
-  const [dolar, cdi, selic, ipca] = await Promise.allSettled([
-    serie(SERIES.dolar, 10), serie(SERIES.cdi, 10), serie(SERIES.selic, 1), serie(SERIES.ipca, 1),
+  const [dolar, cdi, selic, ipca, ipcaMes] = await Promise.allSettled([
+    serie(SERIES.dolar, 10), serie(SERIES.cdi, 10), serie(SERIES.selic, 1), serie(SERIES.ipca, 1), serie(SERIES.ipcaMes, 36),
   ]);
   const ok = (r) => (r.status === 'fulfilled' ? r.value : null);
-  const falhas = Object.keys(SERIES).filter((k, i) => [dolar, cdi, selic, ipca][i].status !== 'fulfilled');
-  if (falhas.length === 4) throw new ErroPedido('O Banco Central não respondeu. Tente mais tarde.', 502);
+  const falhas = Object.keys(SERIES).filter((k, i) => [dolar, cdi, selic, ipca, ipcaMes][i].status !== 'fulfilled');
+  if (falhas.length === 5) throw new ErroPedido('O Banco Central não respondeu. Tente mais tarde.', 502);
 
   const estado = await alterar((e) => {
     const m = e.cols.mercado = e.cols.mercado || {};
     const atual = Object.assign({}, m.atual);
-    const d = ok(dolar), c = ok(cdi), s = ok(selic), i = ok(ipca);
+    const d = ok(dolar), c = ok(cdi), s = ok(selic), i = ok(ipca), im = ok(ipcaMes);
     if (d) { const u = d[d.length - 1]; atual.dolar = u.valor; atual.dolarData = u.data; }
     if (c) { const u = c[c.length - 1]; atual.cdi = u.valor; atual.cdiData = u.data; }
     if (s) atual.selic = s[s.length - 1].valor;
     if (i) { const u = i[i.length - 1]; atual.ipca12m = u.valor; atual.ipcaData = u.data; }
-    atual.fonte = 'Banco Central (SGS 1, 4389, 432 e 13522)';
+    // IPCA de cada mês, para os CDBs de inflação andarem como na corretora
+    if (im) atual.ipcaMes = Object.fromEntries(im.map((p) => [p.data.slice(0, 7), p.valor]));
+    atual.fonte = 'Banco Central (SGS 1, 4389, 432, 13522 e 433)';
     atual.atualizadoEm = new Date().toISOString();
     m.atual = atual;
     // um ponto por dia com o dólar e o CDI daquele dia, para o gráfico de evolução
@@ -77,7 +79,7 @@ export async function GET(request) {
     if (!segredo) {
       const { estado } = await lerEstado();
       const atual = estado.cols && estado.cols.mercado && estado.cols.mercado.atual;
-      if (atual && atual.atualizadoEm && Date.now() - Date.parse(atual.atualizadoEm) < 30 * 60 * 1000) {
+      if (atual && atual.ipcaMes && atual.atualizadoEm && Date.now() - Date.parse(atual.atualizadoEm) < 30 * 60 * 1000) {
         return json({ atual, falhas: [], recente: true });
       }
     }

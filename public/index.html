@@ -1480,7 +1480,8 @@
   const S = {
     db: null, semDb: false,
     cfg: null, receb: [], checkins: [], mercado: null, hist: [], revendas: [], movs: [], aportes: [],
-    loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false },
+    loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false, mercado: false, hist: false, ajustes: false },
+    ajustes: [],
     distTocado: false, confirmarAp: null,
     confirmarRv: null, confirmarMov: null, vendaId: null, movTipo: 'gasto', movCat: null,
     tab: 'mes', mes: mesDe(hojeISO()),
@@ -1548,7 +1549,8 @@
     const ix = idxDe(c);
     if (!ix.taxa) return null;
     if (ix.indexador === 'ipca') {
-      return { venc: vencISO(c.vencimento), tipo: 'ipca', taxa: ix.taxa, anual: (1 + ipcaAtual() / 100) * (1 + ix.taxa / 100) - 1, rotulo: 'IPCA + ' + num1.format(ix.taxa) + '%' + (c.vencimento ? ' · vence ' + c.vencimento : '') };
+      const venc = vencISO(c.vencimento);
+      return { venc, aniv: venc ? Number(venc.slice(8, 10)) : 15, tipo: 'ipca', taxa: ix.taxa, anual: (1 + ipcaAtual() / 100) * (1 + ix.taxa / 100) - 1, rotulo: 'IPCA + ' + num1.format(ix.taxa) + '%' + (c.vencimento ? ' · vence ' + c.vencimento : '') };
     }
     const cdi = cdiUsado != null ? cdiUsado : cdiAtual();
     if (!(cdi > 0)) return null;
@@ -1560,6 +1562,32 @@
     return ck;
   }
   /* A cotação mais nova até a data: a do check-in ou a do Banco Central, a que for mais recente. */
+  /* CDB de inflação como na corretora: em cada período entre aniversários (o dia do vencimento, todo mês),
+     a correção é o IPCA do mês anterior ao aniversário, distribuído pelos dias úteis do período.
+     Sem o IPCA daquele mês ainda divulgado, usa o último que saiu. */
+  function ipcaDoMes(mes) {
+    const t = S.mercado && S.mercado.ipcaMes;
+    if (t && t[mes] != null) return Number(t[mes]);
+    if (t) { const ks = Object.keys(t).sort(); if (ks.length) return Number(t[ks[ks.length - 1]]); }
+    return (Math.pow(1 + ipcaAtual() / 100, 1 / 12) - 1) * 100;
+  }
+  function aniversario(mes, dia) {
+    const [y, m] = mes.split('-').map(Number);
+    return mes + '-' + String(Math.min(dia, new Date(y, m, 0).getDate())).padStart(2, '0');
+  }
+  function fatorIPCA(de, ate, dia) {
+    let f = 1, ini = de, guarda = 0;
+    while (ini < ate && guarda++ < 600) {
+      let a = aniversario(mesDe(ini), dia);
+      if (a > ini) a = aniversario(addMes(mesDe(ini), -1), dia);
+      const b = aniversario(addMes(mesDe(a), 1), dia);
+      const fim = ate < b ? ate : b;
+      const dut = diasUteis(a, b);
+      if (dut > 0) f *= Math.pow(1 + ipcaDoMes(addMes(mesDe(a), -1)) / 100, diasUteis(ini, fim) / dut);
+      ini = fim;
+    }
+    return f;
+  }
   function dolarPara(ck, iso) {
     let v = Number(ck.cotacaoDolar) || 0;
     let data = ck.data;
@@ -1589,6 +1617,7 @@
     let ganhoRenda = 0, ganhoDolar = 0;
     const cresce = (v, renda, de) => {
       const ate = renda.venc && renda.venc < iso ? renda.venc : iso;
+      if (renda.tipo === 'ipca') return v * fatorIPCA(de, ate, renda.aniv) * Math.pow(1 + renda.taxa / 100, diasUteis(de, ate) / 252);
       return v * Math.pow(1 + renda.anual, diasUteis(de, ate) / 252);
     };
     (ck.itens || []).forEach((orig) => {
@@ -1676,6 +1705,40 @@
       if (it.tipo === 'conta') contaT += it.hoje;
     });
     return { ck, iso, du, dol, total, conta: contaT, investido: total - contaT, ganhoRenda, ganhoDolar, itens, semValor };
+  }
+
+  /* ---------- acerto de saldo pendente ----------
+     Um acerto (feito fora do app) vira um check-in naquela data: a conta acertada com o valor informado
+     e as outras com o valor que o app mostra agora, como no "Atualizar saldos da semana". */
+  let aplicandoAjustes = false;
+  async function aplicarAjustes() {
+    if (aplicandoAjustes || !S.db || !S.ajustes.length || !S.cfg) return;
+    if (!['cfg', 'receb', 'check', 'aportes', 'revendas', 'movs', 'mercado', 'hist', 'ajustes'].every((k) => S.loaded[k])) return;
+    aplicandoAjustes = true;
+    try {
+      for (const aj of S.ajustes.slice()) {
+        const conta = (S.cfg.contas || []).find((c) => c.id === aj.contaId);
+        if (conta) {
+          const e = estimativa(aj.data);
+          const itens = S.cfg.contas.map((c) => {
+            let v;
+            if (c.id === aj.contaId) v = Number(aj.valor);
+            else {
+              const it = e && e.itens.find((i) => i.id === c.id);
+              v = !it || it.hoje == null ? null : c.moeda === 'USD' ? (e.dol.v > 0 ? it.hoje / e.dol.v : Number(it.valor)) : it.hoje;
+            }
+            return { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, valor: v == null ? null : r2(v) };
+          });
+          await S.db.doc('checkins/' + aj.data).set({ data: aj.data, itens, cotacaoDolar: e && e.dol.v > 0 ? e.dol.v : null, salvoEm: new Date().toISOString(), origem: 'acerto' });
+          toast(conta.nome + ' acertado para ' + R(aj.valor) + '.');
+        }
+        await S.db.doc('ajustes/' + aj.id).delete();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      aplicandoAjustes = false;
+    }
   }
 
   /* ---------- reserva de emergência ---------- */
@@ -3346,11 +3409,20 @@
     }, falhou);
     db.doc('mercado/atual').onSnapshot((snap) => {
       S.mercado = snap.exists ? snap.data() : null;
+      S.loaded.mercado = true;
       render();
+      aplicarAjustes();
+    }, falhou);
+    db.collection('ajustes').onSnapshot((snap) => {
+      S.ajustes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      S.loaded.ajustes = true;
+      aplicarAjustes();
     }, falhou);
     db.collection('mercado_hist').orderBy('data', 'desc').limit(400).onSnapshot((snap) => {
       S.hist = snap.docs.map((d) => d.data()).filter((h) => h && h.data).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      S.loaded.hist = true;
       render();
+      aplicarAjustes();
     }, falhou);
   })();
 })();
