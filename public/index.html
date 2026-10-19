@@ -2519,14 +2519,35 @@
     const ini = valores[0], fim = valores[valores.length - 1], dif = fim - ini;
     topo.innerHTML = '<div class="evo-topo"><span class="' + (dif >= 0 ? 't-invest' : 'neg') + '">' + RS(dif) + '</span><small>desde ' + dataCurta(lista[0]) +
       ' (' + (ini > 0 ? (dif >= 0 ? '+' : '') + num1.format(dif / ini * 100) + '%' : '') + ')</small></div>';
-    // com poucos dias, uma linha exagera centavos; mostra dia a dia até ter uma semana e meia de pontos
-    if (lista.length < 8) {
-      box.innerHTML = '<div class="rows">' + lista.map((d, i) => '<div class="row"><span class="row-name">' + dataCurta(d) +
-        (S.checkins.some((c) => c.data === d) ? '<small>check-in</small>' : '') + '</span><span class="row-val">' + R(valores[i]) +
-        (i ? '<small class="' + (valores[i] - valores[i - 1] >= 0 ? 't-invest' : 'neg') + '">' + RS(valores[i] - valores[i - 1]) + '</small>' : '') + '</span></div>').reverse().join('') +
-        '</div>';
-      return;
+    // barras com quanto mudou de um dia para o outro: verde subiu, vermelho desceu, sempre a partir do zero
+    if (lista.length < 2) { box.innerHTML = ''; return; }
+    const dias = lista.slice(1).map((d, k) => ({ d, v: valores[k + 1] - valores[k], ck: S.checkins.some((c) => c.data === d) })).slice(-20);
+    const W = box.clientWidth || 320, H = 190, mt = 24, mb = 44;
+    const maxP = Math.max(0, ...dias.map((x) => x.v)), maxN = Math.max(0, ...dias.map((x) => -x.v));
+    const tot = (maxP + maxN) || 1;
+    const y0 = mt + (H - mt - mb) * (maxP / tot);
+    const esc1 = (H - mt - mb) / tot;
+    const passo = W / dias.length, bw = Math.min(46, passo * 0.62);
+    const rot = dias.length <= 10;
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="Quanto o patrimônio mudou a cada dia">';
+    svg += '<line x1="0" x2="' + W + '" y1="' + y0.toFixed(1) + '" y2="' + y0.toFixed(1) + '" stroke="var(--line)" stroke-width="1"></line>';
+    dias.forEach((x, k) => {
+      const cx = passo * k + passo / 2, h = Math.max(2, Math.abs(x.v) * esc1);
+      const y = x.v >= 0 ? y0 - h : y0;
+      const cor = x.v >= 0 ? 'var(--invest)' : 'var(--danger)';
+      svg += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="4" fill="' + cor + '"></rect>';
+      if (rot) {
+        const ty = x.v >= 0 ? y - 6 : y + h + 13;
+        svg += '<text class="lbl-strong" x="' + cx.toFixed(1) + '" y="' + ty.toFixed(1) + '" text-anchor="middle" fill="' + cor + '">' + (x.v >= 0 ? '+' : '−') + num2.format(Math.abs(x.v)) + '</text>';
+        svg += '<text class="lbl" x="' + cx.toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + dataCurta(x.d) + (x.ck ? ' ✓' : '') + '</text>';
+      }
+    });
+    if (!rot) {
+      svg += '<text class="lbl" x="0" y="' + (H - 6) + '" text-anchor="start">' + dataCurta(dias[0].d) + '</text>';
+      svg += '<text class="lbl" x="' + W + '" y="' + (H - 6) + '" text-anchor="end">' + dataCurta(dias[dias.length - 1].d) + '</text>';
     }
+    box.innerHTML = svg + '</svg>';
+    return;
     const pontos = lista.map((d, i) => (S.checkins.some((c) => c.data === d) ? i : -1)).filter((i) => i >= 0);
     desenharLinhas(box, {
       titulo: 'Patrimônio dia a dia',
