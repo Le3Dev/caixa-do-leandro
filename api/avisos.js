@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { json, falha, lerEstado } from './_lib.js';
 import { lerPush, enviarTodos, marcarEnviado } from './_push.js';
+import { atualizarCotas } from './mercado.js';
 
 // GET /api/avisos → chamado pelo cron todo dia útil de manhã.
 // No dia em que um pagamento deve cair (dia 15 e último dia útil do mês, como na aba Mês),
@@ -86,6 +87,8 @@ export async function GET(request) {
   }
   const segredo = process.env.CRON_SECRET;
   if (segredo && request.headers.get('authorization') !== `Bearer ${segredo}`) return json({ erro: 'não autorizado' }, 401);
+  // de manhã a CVM já divulgou a cota de ontem: busca antes, para o app abrir com o fundo em dia
+  try { await atualizarCotas(); } catch (e) { console.error('cotas', e); }
   try {
     const hoje = process.env.AVISOS_HOJE || hojeBR();
     const mes = hoje.slice(0, 7);

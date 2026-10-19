@@ -1606,8 +1606,16 @@
     Object.keys(d).forEach((k) => { if (k <= iso && (!best || k > best)) best = k; });
     return best ? { data: best, v: Number(d[best]) } : null;
   }
-  function fatorCota(cnpj, de, ate) {
-    const a = cotaEm(cnpj, de), b = cotaEm(cnpj, ate);
+  /* A corretora mostra o fundo com a cota do dia útil anterior: o valor anotado num check-in do dia D
+     corresponde à última cota antes de D. Assim a cota que chega depois não é contada duas vezes. */
+  function cotaAntes(cnpj, iso) {
+    const d = (S.cotas[cnpj] && S.cotas[cnpj].datas) || {};
+    let best = null;
+    Object.keys(d).forEach((k) => { if (k < iso && (!best || k > best)) best = k; });
+    return best ? { data: best, v: Number(d[best]) } : cotaEm(cnpj, iso);
+  }
+  function fatorCota(cnpj, de, ate, doCheckin) {
+    const a = doCheckin ? cotaAntes(cnpj, de) : cotaEm(cnpj, de), b = cotaEm(cnpj, ate);
     return a && b && a.v > 0 ? b.v / a.v : 1;
   }
   function dolarPara(ck, iso) {
@@ -1662,7 +1670,7 @@
         ganhoDolar += v * (dol.v - cotCk);
       } else if (it.cnpj && temCota(it.cnpj)) {
         // fundo: anda junto com a cota do dia divulgada na CVM
-        it.hoje = v * fatorCota(it.cnpj, ck.data, iso);
+        it.hoje = v * fatorCota(it.cnpj, ck.data, iso, true);
         it.cotaData = cotaEm(it.cnpj, iso).data;
         ganhoRenda += it.hoje - v;
       } else if (it.renda && du > 0) {
@@ -1744,13 +1752,19 @@
     if (!['cfg', 'receb', 'check', 'aportes', 'revendas', 'movs', 'mercado', 'hist', 'ajustes'].every((k) => S.loaded[k])) return;
     aplicandoAjustes = true;
     try {
-      for (const aj of S.ajustes.slice()) {
-        const conta = (S.cfg.contas || []).find((c) => c.id === aj.contaId);
-        if (conta) {
+      // acertos do mesmo dia viram um check-in só
+      const porData = {};
+      S.ajustes.forEach((aj) => { (porData[aj.data] = porData[aj.data] || []).push(aj); });
+      for (const data of Object.keys(porData).sort()) {
+        const grupo = porData[data];
+        const acertos = {};
+        grupo.forEach((aj) => { if ((S.cfg.contas || []).some((c) => c.id === aj.contaId)) acertos[aj.contaId] = Number(aj.valor); });
+        const aj = { data };
+        if (Object.keys(acertos).length) {
           const e = estimativa(aj.data);
           const itens = S.cfg.contas.map((c) => {
             let v;
-            if (c.id === aj.contaId) v = Number(aj.valor);
+            if (c.id in acertos) v = acertos[c.id];
             else {
               const it = e && e.itens.find((i) => i.id === c.id);
               v = !it || it.hoje == null ? null : c.moeda === 'USD' ? (e.dol.v > 0 ? it.hoje / e.dol.v : Number(it.valor)) : it.hoje;
@@ -1758,9 +1772,10 @@
             return { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, valor: v == null ? null : r2(v) };
           });
           await S.db.doc('checkins/' + aj.data).set({ data: aj.data, itens, cotacaoDolar: e && e.dol.v > 0 ? e.dol.v : null, salvoEm: new Date().toISOString(), origem: 'acerto' });
-          toast(conta.nome + ' acertado para ' + R(aj.valor) + '.');
+          const nomes = Object.keys(acertos).map((id) => (S.cfg.contas.find((c) => c.id === id) || {}).nome).filter(Boolean);
+          toast(nomes.length === 1 ? nomes[0] + ' acertado para ' + R(acertos[Object.keys(acertos)[0]]) + '.' : 'Saldos acertados: ' + nomes.join(', ') + '.');
         }
-        await S.db.doc('ajustes/' + aj.id).delete();
+        for (const a of grupo) await S.db.doc('ajustes/' + a.id).delete();
       }
     } catch (err) {
       console.error(err);
