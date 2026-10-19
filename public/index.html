@@ -318,6 +318,11 @@
   .btn-row.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .btn-row.tres .btn-ghost { padding-inline: 6px; }
   #iv-tudo { align-self: flex-start; margin-top: -6px; }
+  .chips.lugares { margin-bottom: 4px; }
+  .lugar-resumo { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 6px; }
+  .lugar-resumo > div { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .lugar-resumo b { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; }
+  .lugar-resumo small { font-size: .78rem; font-weight: 500; }
   .evo-topo { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .evo-topo span { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; }
   .evo-topo small { color: var(--muted); font-size: .85rem; }
@@ -2261,13 +2266,41 @@
 
   function renderDivisao(e) {
     const box = $('#pat-divisao');
-    const itens = e.itens.filter((it) => it.hoje != null && it.hoje > 0).sort((a, b) => {
+    const todos = e.itens.filter((it) => it.hoje != null && it.hoje > 0).sort((a, b) => {
       if ((a.tipo === 'conta') !== (b.tipo === 'conta')) return a.tipo === 'conta' ? 1 : -1;
       return b.hoje - a.hoje;
     });
-    if (!itens.length) { box.innerHTML = '<p class="hint">Sem saldos ainda.</p>'; return; }
+    if (!todos.length) { box.innerHTML = '<p class="hint">Sem saldos ainda.</p>'; return; }
     let corI = 0;
-    itens.forEach((it) => { it.cor = it.tipo === 'conta' ? 'var(--c8)' : CORES[corI++ % CORES.length]; it.share = it.hoje / e.total; });
+    todos.forEach((it) => { it.cor = it.tipo === 'conta' ? 'var(--c8)' : CORES[corI++ % CORES.length]; });
+    // botões por instituição (onde o dinheiro está), do maior para o menor
+    const inst = (it) => String(it.lugar || '').split(' · ')[0].trim();
+    const porLugar = {};
+    todos.forEach((it) => { if (it.tipo !== 'estoque' && inst(it)) porLugar[inst(it)] = (porLugar[inst(it)] || 0) + it.hoje; });
+    const lugares = Object.keys(porLugar).sort((a, b) => porLugar[b] - porLugar[a]);
+    if (S.filtroLugar && !lugares.includes(S.filtroLugar)) S.filtroLugar = null;
+    const filtro = S.filtroLugar;
+    const itens = filtro ? todos.filter((it) => it.tipo !== 'estoque' && inst(it) === filtro) : todos;
+    const totalF = itens.reduce((a, it) => a + it.hoje, 0);
+    itens.forEach((it) => { it.share = it.hoje / totalF; });
+    const chips = '<div class="chips lugares" role="group" aria-label="Instituição">' +
+      ['', ...lugares].map((l) => '<button class="pill" type="button" data-lugar="' + esc(l) + '" aria-pressed="' + String((filtro || '') === l) + '">' + esc(l || 'Tudo') + '</button>').join('') + '</div>';
+    let resumo = '';
+    if (filtro) {
+      // quanto rendeu desde o primeiro check-in: valor de hoje menos o que havia lá e o que foi aplicado depois
+      const ck0 = S.checkins[0];
+      let ganho = 0, base = 0;
+      itens.filter((it) => it.tipo !== 'conta' && it.tipo !== 'estoque').forEach((it) => {
+        const o = ck0 && (ck0.itens || []).find((x) => x.id === it.id);
+        const b0 = o && o.valor != null ? Number(o.valor) * (o.moeda === 'USD' ? Number(ck0.cotacaoDolar) || 0 : 1) : 0;
+        const ap = S.aportes.filter((a) => a.contaId === it.id && ck0 && depoisDoCheckin(ck0, a.data, a.criadoEm)).reduce((s2, a) => s2 + (Number(a.valor) || 0), 0);
+        ganho += it.hoje - b0 - ap;
+        base += b0 + ap;
+      });
+      resumo = '<div class="lugar-resumo"><div><span class="hint">Total em ' + esc(filtro) + '</span><b>' + R(totalF) + '</b></div>' +
+        (ck0 ? '<div><span class="hint">Rendeu desde ' + dataCurta(ck0.data) + '</span><b class="' + (ganho >= 0 ? 't-invest' : 'neg') + '">' + RS(ganho) +
+          (base > 0 ? ' <small>(' + (ganho >= 0 ? '+' : '') + num1.format(ganho / base * 100) + '%)</small>' : '') + '</b></div>' : '') + '</div>';
+    }
     const r = 62, C = 2 * Math.PI * r, gap = itens.length > 1 ? 2 : 0;
     let acc = 0;
     const arcos = itens.map((it) => {
@@ -2277,13 +2310,13 @@
       return s;
     }).join('');
     const parado = itens.filter((it) => it.tipo === 'conta').reduce((s, it) => s + it.share, 0);
-    box.innerHTML =
+    box.innerHTML = chips + resumo +
       '<div class="donut-wrap">' +
         '<svg class="donut" viewBox="0 0 168 168" role="img" aria-label="Divisão do patrimônio por aplicação">' +
           '<defs><mask id="rosca-mascara" maskUnits="userSpaceOnUse" x="0" y="0" width="168" height="168"><circle class="varredura" data-c="' + (C + 2).toFixed(2) + '" cx="84" cy="84" r="' + r + '" fill="none" stroke="#fff" stroke-width="26" stroke-dasharray="' + (C + 2).toFixed(2) + ' ' + (C + 2).toFixed(2) + '" stroke-dashoffset="0" transform="rotate(-90 84 84)"></circle></mask></defs>' +
           '<circle cx="84" cy="84" r="' + r + '" fill="none" stroke="var(--surface-2)" stroke-width="22"></circle><g mask="url(#rosca-mascara)">' + arcos + '</g>' +
-          '<text class="c-lbl" x="84" y="78" text-anchor="middle">investido</text>' +
-          '<text class="c-total" x="84" y="98" text-anchor="middle">' + esc(pct1.format(1 - parado)) + '</text>' +
+          '<text class="c-lbl" x="84" y="78" text-anchor="middle">' + (filtro ? esc(filtro) : 'investido') + '</text>' +
+          '<text class="c-total" x="84" y="98" text-anchor="middle">' + esc(filtro ? 'R$ ' + compact.format(totalF) : pct1.format(1 - parado)) + '</text>' +
         '</svg>' +
         '<div class="legend">' + itens.map((it) =>
           '<div class="leg"><span class="sw" style="background:' + it.cor + '"></span>' +
@@ -3328,6 +3361,12 @@
 
   $('#dist-valor').addEventListener('input', () => { S.distTocado = true; });
   $('#dist-salvar').addEventListener('click', salvarDistribuir);
+  $('#pat-divisao').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-lugar]');
+    if (!b) return;
+    S.filtroLugar = b.dataset.lugar || null;
+    renderPatrimonio();
+  });
   $('#pat-aportes').addEventListener('click', async (ev) => {
     const btn = ev.target.closest('[data-ap]');
     if (!btn) return;
