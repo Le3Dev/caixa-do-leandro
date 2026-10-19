@@ -318,6 +318,9 @@
   .btn-row.tres { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .btn-row.tres .btn-ghost { padding-inline: 6px; }
   #iv-tudo { align-self: flex-start; margin-top: -6px; }
+  .evo-topo { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .evo-topo span { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; }
+  .evo-topo small { color: var(--muted); font-size: .85rem; }
   .notif-cheio { grid-column: 1 / -1; }
   .saldo-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
   .saldo-top .link { padding: 0; }
@@ -708,6 +711,7 @@
 
     <div class="card" id="pat-grafico-card">
       <h3>Evolução do patrimônio</h3>
+      <div id="pat-grafico-topo"></div>
       <div class="chart" id="pat-grafico"></div>
     </div>
 
@@ -2503,28 +2507,36 @@
   /* Um ponto por dia: cada check-in e cada dia útil com dólar e CDI novos. */
   function grafico() {
     const box = $('#pat-grafico');
+    const topo = $('#pat-grafico-topo');
     const primeiro = S.checkins[0];
-    if (!primeiro) { box.innerHTML = ''; return; }
+    if (!primeiro) { box.innerHTML = ''; topo.innerHTML = ''; return; }
     const hoje = hojeISO();
     const datas = new Set(S.checkins.map((c) => c.data));
     S.hist.forEach((h) => { if (h.data >= primeiro.data && h.data <= hoje) datas.add(h.data); });
     datas.add(hoje);
     const lista = Array.from(datas).filter((d) => d >= primeiro.data && d <= hoje).sort();
-    if (lista.length < 2) {
-      const e0 = estimativa(lista[0]);
-      box.innerHTML = '<p class="hint">Aqui você acompanha o patrimônio subindo ou descendo, dia a dia. Por enquanto só existe o primeiro ponto: <b>' + R(e0 ? e0.total : 0) + '</b> em ' + dataCurta(lista[0]) +
-        '. A cada dia útil entra um ponto novo, com o rendimento e o dólar do dia, e a linha começa a aparecer. Cada check-in acerta o valor pelos saldos reais dos apps.</p>';
+    const valores = lista.map((d) => estimativa(d).total);
+    const ini = valores[0], fim = valores[valores.length - 1], dif = fim - ini;
+    topo.innerHTML = '<div class="evo-topo"><span class="' + (dif >= 0 ? 't-invest' : 'neg') + '">' + RS(dif) + '</span><small>desde ' + dataCurta(lista[0]) +
+      ' (' + (ini > 0 ? (dif >= 0 ? '+' : '') + num1.format(dif / ini * 100) + '%' : '') + ')</small></div>';
+    // com poucos dias, uma linha exagera centavos; mostra dia a dia até ter uma semana e meia de pontos
+    if (lista.length < 8) {
+      box.innerHTML = '<div class="rows">' + lista.map((d, i) => '<div class="row"><span class="row-name">' + dataCurta(d) +
+        (S.checkins.some((c) => c.data === d) ? '<small>check-in</small>' : '') + '</span><span class="row-val">' + R(valores[i]) +
+        (i ? '<small class="' + (valores[i] - valores[i - 1] >= 0 ? 't-invest' : 'neg') + '">' + RS(valores[i] - valores[i - 1]) + '</small>' : '') + '</span></div>').reverse().join('') +
+        '</div>';
       return;
     }
-    const valores = lista.map((d) => estimativa(d).total);
     const pontos = lista.map((d, i) => (S.checkins.some((c) => c.data === d) ? i : -1)).filter((i) => i >= 0);
     desenharLinhas(box, {
       titulo: 'Patrimônio dia a dia',
-      series: [{ valores, cor: 'var(--invest)', area: true, pontos, rotuloFim: 'R$ ' + compact.format(valores[valores.length - 1]) }],
+      series: [{ valores, cor: 'var(--invest)', area: true, pontos, rotuloFim: 'R$ ' + compact.format(fim) }],
+      refs: [{ valor: Math.min(...valores), cor: 'var(--muted)', rotulo: 'mín. ' + R(Math.min(...valores)) }],
       xIni: dataCurta(lista[0]),
       xFim: dataCurta(lista[lista.length - 1]),
     });
   }
+
 
   function abrirCheckin() {
     if (!S.cfg || !(S.cfg.contas || []).length) { abrirAba('ajustes'); toast('Primeiro cadastre suas contas em Ajustes.'); return; }
