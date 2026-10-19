@@ -1,4 +1,26 @@
 import { json, falha, autorizado, alterar, lerEstado, guardarCopia, ErroPedido } from './_lib.js';
+import { buscarCotas } from './_cotas.js';
+
+/* Cotas dos fundos que têm CNPJ em Ajustes. Guarda até 120 dias de cada um. */
+export async function atualizarCotas() {
+  const { estado } = await lerEstado();
+  const contas = (estado.cols.config && estado.cols.config.main && estado.cols.config.main.contas) || [];
+  const cnpjs = contas.map((c) => c.cnpj).filter(Boolean);
+  if (!cnpjs.length) return {};
+  const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+  const novas = await buscarCotas(cnpjs, hoje, 2);
+  await alterar((e) => {
+    e.cols.cotas = e.cols.cotas || {};
+    for (const [cnpj, datas] of Object.entries(novas)) {
+      const doc = e.cols.cotas[cnpj] = e.cols.cotas[cnpj] || { cnpj, datas: {} };
+      Object.assign(doc.datas, datas);
+      const ks = Object.keys(doc.datas).sort();
+      ks.slice(0, Math.max(0, ks.length - 120)).forEach((k) => delete doc.datas[k]);
+      doc.atualizadoEm = new Date().toISOString();
+    }
+  });
+  return Object.fromEntries(Object.entries(novas).map(([c, d]) => { const ks = Object.keys(d).sort(); return [c, { dias: ks.length, ultima: ks[ks.length - 1], cota: d[ks[ks.length - 1]] }]; }));
+}
 
 // Dólar PTAX de venda, CDI anualizado, Selic meta e IPCA de 12 meses, direto do Banco Central.
 // GET  /api/mercado → chamado pelo cron da Vercel todo dia útil (Authorization: Bearer CRON_SECRET)
@@ -63,6 +85,7 @@ async function atualizar() {
       }
     }
   });
+  try { await atualizarCotas(); } catch (e) { console.error('cotas', e); }
   // aproveita a passada diária para guardar a cópia do mês
   try { await guardarCopia(estado); } catch (e) { console.error('cópia', e); }
   return { atual: estado.cols.mercado.atual, falhas };

@@ -1486,6 +1486,7 @@
     cfg: null, receb: [], checkins: [], mercado: null, hist: [], revendas: [], movs: [], aportes: [],
     loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false, mercado: false, hist: false, ajustes: false },
     ajustes: [],
+    cotas: {},
     distTocado: false, confirmarAp: null,
     confirmarRv: null, confirmarMov: null, vendaId: null, movTipo: 'gasto', movCat: null,
     tab: 'mes', mes: mesDe(hojeISO()),
@@ -1592,6 +1593,18 @@
     }
     return f;
   }
+  /* Cotas de fundos (CVM), guardadas pelo servidor. */
+  const temCota = (cnpj) => !!(S.cotas[cnpj] && Object.keys(S.cotas[cnpj].datas || {}).length);
+  function cotaEm(cnpj, iso) {
+    const d = (S.cotas[cnpj] && S.cotas[cnpj].datas) || {};
+    let best = null;
+    Object.keys(d).forEach((k) => { if (k <= iso && (!best || k > best)) best = k; });
+    return best ? { data: best, v: Number(d[best]) } : null;
+  }
+  function fatorCota(cnpj, de, ate) {
+    const a = cotaEm(cnpj, de), b = cotaEm(cnpj, ate);
+    return a && b && a.v > 0 ? b.v / a.v : 1;
+  }
   function dolarPara(ck, iso) {
     let v = Number(ck.cotacaoDolar) || 0;
     let data = ck.data;
@@ -1627,7 +1640,7 @@
     (ck.itens || []).forEach((orig) => {
       // nome, lugar e tipo vêm de Ajustes, para um nome novo valer também nos check-ins antigos
       const c = contasCfg.find((x) => x.id === orig.id);
-      const it = Object.assign({}, orig, c ? { nome: c.nome, lugar: c.lugar, tipo: c.tipo } : {});
+      const it = Object.assign({}, orig, c ? { nome: c.nome, lugar: c.lugar, tipo: c.tipo, cnpj: c.cnpj } : {});
       it.renda = it.moeda === 'USD' ? null : rendaDe(it.id);
       it.aportado = 0;
       if (it.valor == null || !Number.isFinite(Number(it.valor))) {
@@ -1642,6 +1655,11 @@
       if (it.moeda === 'USD') {
         it.hoje = v * dol.v;
         ganhoDolar += v * (dol.v - cotCk);
+      } else if (it.cnpj && temCota(it.cnpj)) {
+        // fundo: anda junto com a cota do dia divulgada na CVM
+        it.hoje = v * fatorCota(it.cnpj, ck.data, iso);
+        it.cotaData = cotaEm(it.cnpj, iso).data;
+        ganhoRenda += it.hoje - v;
       } else if (it.renda && du > 0) {
         it.hoje = cresce(v, it.renda, ck.data);
         ganhoRenda += it.hoje - v;
@@ -1682,7 +1700,7 @@
       if (!it) {
         const c = contasCfg.find((x) => x.id === a.contaId);
         if (!c) return;
-        it = { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, valor: 0, hoje: 0, renda: c.moeda === 'USD' ? null : rendaDe(c.id), aportado: 0 };
+        it = { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, cnpj: c.cnpj, valor: 0, hoje: 0, renda: c.moeda === 'USD' ? null : rendaDe(c.id), aportado: 0 };
         itens.push(it);
       }
       if (it.hoje == null) {
@@ -1693,6 +1711,7 @@
       const valor = Number(a.valor) || 0;
       let soma;
       if (it.moeda === 'USD') soma = (Number(a.valorMoeda) || 0) * dol.v;
+      else if (it.cnpj && temCota(it.cnpj)) { soma = valor * fatorCota(it.cnpj, a.data, iso); ganhoRenda += soma - valor; }
       else if (it.renda) { soma = cresce(valor, it.renda, a.data); ganhoRenda += soma - valor; }
       else soma = valor;
       it.hoje += soma;
@@ -2496,6 +2515,7 @@
       if (it.hoje == null) return '<div class="row"><span class="row-name">' + esc(it.nome) + '<small>' + esc(it.lugar) + '</small></span><span class="row-val none">sem valor</span></div>';
       let sub = esc(it.lugar);
       if (it.renda) sub += ' · ' + esc(it.renda.rotulo);
+      if (it.cotaData) sub += ' · cota de ' + dataCurta(it.cotaData);
       let extra = '';
       if (it.moeda === 'USD') extra = '<small>US$ ' + num2.format(it.valor) + '</small>';
       else if (Math.abs(it.hoje - Number(it.valor)) >= 0.005) extra = '<small>' + RS(it.hoje - Number(it.valor)) + ' desde o check-in</small>';
@@ -3445,6 +3465,10 @@
       S.loaded.mercado = true;
       render();
       aplicarAjustes();
+    }, falhou);
+    db.collection('cotas').onSnapshot((snap) => {
+      S.cotas = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+      render();
     }, falhou);
     db.collection('ajustes').onSnapshot((snap) => {
       S.ajustes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => String(a.data).localeCompare(String(b.data)));
