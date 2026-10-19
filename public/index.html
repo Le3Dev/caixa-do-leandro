@@ -351,6 +351,21 @@
   .cat-total b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; }
   .cat-total small { color: var(--muted); font-size: .82rem; }
   .cats { display: flex; flex-direction: column; gap: 10px; }
+  .rv-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .rv-kpis > div { background: var(--surface-2); border-radius: 12px; padding: 9px 8px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .rv-kpis b { font-family: var(--font-display); font-size: .95rem; font-weight: 700; }
+  .rv-kpis .hint { font-size: .74rem; }
+  .rv-sec { margin: 16px 0 8px; font-size: .9rem; font-weight: 700; }
+  .rv-meses { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; align-items: end; }
+  .rv-mes { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: .74rem; }
+  .rv-col { height: 80px; width: 100%; max-width: 34px; display: flex; align-items: flex-end; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+  .rv-col i { display: block; width: 100%; border-radius: 6px; }
+  .dif { font-style: normal; font-weight: 700; white-space: nowrap; }
+  .dif.mais { color: var(--danger); }
+  .dif.menos { color: var(--invest); }
+  .dif.novo { color: var(--muted); font-weight: 600; }
+  .cat-vs { margin: 6px 0 2px; }
+  .cats .cat-row { grid-template-columns: 5.5rem 1fr 6.6rem; }
   .cat-row { display: grid; grid-template-columns: minmax(5.5rem, auto) 1fr auto; align-items: center; gap: 10px; font-size: .9rem; }
   .cat-row b { font-weight: 600; white-space: nowrap; text-align: right; }
   .cat-row b small { display: block; color: var(--muted); font-weight: 400; font-size: .76rem; }
@@ -394,6 +409,7 @@
   .row-name small { color: var(--muted); font-size: .8rem; }
   .row-val { text-align: right; white-space: nowrap; font-weight: 600; }
   .row-val small { display: block; color: var(--muted); font-weight: 400; font-size: .8rem; }
+  .row-val small.neg { color: var(--danger); }
   .row-val.none { color: var(--muted); font-weight: 400; }
 
   /* Ajustes */
@@ -628,6 +644,11 @@
     <div class="card" id="mim-gastos-card" hidden>
       <h3 id="mim-gastos-titulo">Gastos do mês</h3>
       <div class="panel" id="mim-gastos"></div>
+    </div>
+
+    <div class="card" id="mim-painel-card" hidden>
+      <h3>Painel da revenda</h3>
+      <div id="mim-painel"></div>
     </div>
 
     <div class="card" id="mim-revendas-card">
@@ -1511,7 +1532,7 @@
   const S = {
     db: null, semDb: false,
     cfg: null, receb: [], checkins: [], mercado: null, hist: [], revendas: [], movs: [], aportes: [],
-    loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false, mercado: false, hist: false, ajustes: false },
+    loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false, mercado: false, hist: false, ajustes: false, cotas: false },
     ajustes: [],
     cotas: {},
     distTocado: false, confirmarAp: null,
@@ -2621,7 +2642,7 @@
     const datas = [ini];
     while (datas[datas.length - 1] < hoje) datas.push(somaDia(datas[datas.length - 1], 1));
     let ant = inv(ini), fC = 1, fD = 1, ganho = 0;
-    const cart = [0], cdi = [0];
+    const cart = [0], cdi = [0], acum = [0];
     for (let i = 1; i < datas.length; i++) {
       const d = datas[i];
       const v = inv(d), ap = aplicado[d] || 0;
@@ -2635,9 +2656,10 @@
       }
       cart.push((fC - 1) * 100);
       cdi.push((fD - 1) * 100);
+      acum.push(ganho);
       ant = v;
     }
-    return { datas, cart, cdi, ganho, pct: (fC - 1) * 100, pctCdi: (fD - 1) * 100, total: ant };
+    return { datas, cart, cdi, acum, ganho, pct: (fC - 1) * 100, pctCdi: (fD - 1) * 100, total: ant };
   }
   const mesCurto = (iso) => { const [y, m] = iso.split('-'); return ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][Number(m) - 1] + '/' + y.slice(2); };
   const pctTxt = (v) => (v >= 0 ? '' : '−') + num2.format(Math.abs(v)) + '%';
@@ -2811,10 +2833,60 @@
     html += '</div></div>';
     box.innerHTML = html;
     renderGastos();
+    renderPainelRevenda();
     renderRevendas();
     renderVale();
     renderExtrato();
     renderSimRevenda();
+  }
+
+  /* Painel: lucro de cada mês, o que vende mais rápido e o que está parado. */
+  function renderPainelRevenda() {
+    const card = $('#mim-painel-card');
+    if (!S.revendas.length) { card.hidden = true; return; }
+    card.hidden = false;
+    const hoje = hojeISO();
+    const vendidas = S.revendas.filter(vendida).map((r) => ({ r, a: analise(r), dias: Math.max(0, diasEntre(r.compraData, r.vendaData)) }));
+    const estoque = S.revendas.filter((r) => !vendida(r)).map((r) => ({ r, custo: custoDe(r), dias: Math.max(0, diasEntre(r.compraData, hoje)) })).sort((a, b) => b.dias - a.dias);
+    const lucroTot = vendidas.reduce((s2, x) => s2 + x.a.lucro, 0);
+    const parado = estoque.reduce((s2, x) => s2 + x.custo, 0);
+    const diasMed = vendidas.length ? Math.round(vendidas.reduce((s2, x) => s2 + x.dias, 0) / vendidas.length) : null;
+    let html = '<div class="rv-kpis">' +
+      '<div><span class="hint">Lucro total</span><b class="' + (lucroTot >= 0 ? 't-invest' : 'neg') + '">' + (lucroTot >= 0 ? R(lucroTot) : RS(lucroTot).replace(' ', '\u00a0')) + '</b><small class="hint">' + vendidas.length + (vendidas.length === 1 ? ' venda' : ' vendas') + '</small></div>' +
+      '<div><span class="hint">Parado em produtos</span><b>' + R(parado) + '</b><small class="hint">' + estoque.length + (estoque.length === 1 ? ' item' : ' itens') + '</small></div>' +
+      '<div><span class="hint">Tempo para vender</span><b>' + (diasMed != null ? diasTxt(diasMed) : '—') + '</b><small class="hint">em média</small></div></div>';
+    // lucro por mês (mês da venda), últimos 6 meses
+    const mesAtual = mesDe(hoje);
+    const meses = [];
+    for (let i = 5; i >= 0; i--) meses.push(addMes(mesAtual, -i));
+    const porMes = meses.map((m) => vendidas.filter((x) => mesDe(x.r.vendaData) === m).reduce((s2, x) => s2 + x.a.lucro, 0));
+    if (vendidas.length) {
+      const max = Math.max(...porMes.map(Math.abs), 1);
+      html += '<h4 class="rv-sec">Lucro por mês</h4><div class="rv-meses">' + meses.map((m, i) => {
+        const v = porMes[i];
+        const h = Math.abs(v) / max * 100;
+        return '<div class="rv-mes"><small class="' + (v > 0 ? 't-invest' : v < 0 ? 'neg' : 'hint') + '">' + (v ? (v > 0 ? '+' : '−') + compact.format(Math.abs(v)) : '') + '</small>' +
+          '<span class="rv-col"><i style="height:' + Math.max(v ? 4 : 0, h).toFixed(1) + '%;background:' + (v >= 0 ? 'var(--invest)' : 'var(--danger)') + '"></i></span>' +
+          '<small class="hint">' + nomeMes(m, false).slice(0, 3) + '</small></div>';
+      }).join('') + '</div>';
+      // o que vende mais rápido: agrupa pelo nome
+      const grupos = {};
+      vendidas.forEach((x) => {
+        const k = String(x.r.nome || '').trim().toLowerCase();
+        const g = grupos[k] = grupos[k] || { nome: String(x.r.nome || '').trim(), n: 0, dias: 0, lucro: 0 };
+        g.n++; g.dias += x.dias; g.lucro += x.a.lucro;
+      });
+      const rapidos = Object.values(grupos).map((g) => Object.assign(g, { media: g.dias / g.n })).sort((a, b) => a.media - b.media || b.lucro - a.lucro).slice(0, 3);
+      html += '<h4 class="rv-sec">Vende mais rápido</h4><div class="rows">' + rapidos.map((g, i) =>
+        '<div class="row"><span class="row-name">' + (i + 1) + '. ' + esc(g.nome) + '<small>' + (g.n > 1 ? g.n + ' vendas · ' : '') + 'lucro ' + (g.n > 1 ? 'médio ' : '') + RS(g.lucro / g.n) + '</small></span><span class="row-val">' + diasTxt(Math.round(g.media)) + '</span></div>').join('') + '</div>';
+    }
+    if (estoque.length) {
+      html += '<h4 class="rv-sec">Parados agora</h4><div class="rows">' + estoque.map((x) =>
+        '<div class="row"><span class="row-name">' + esc(x.r.nome) + '<small>comprado em ' + dataCurta(x.r.compraData) + '</small></span><span class="row-val">' + R(x.custo) +
+        '<small class="' + (diasMed != null && x.dias > diasMed ? 'neg' : '') + '">há ' + diasTxt(x.dias) + '</small></span></div>').join('') + '</div>';
+      if (diasMed != null && estoque.some((x) => x.dias > diasMed)) html += '<p class="hint">Em vermelho: parado há mais tempo do que você costuma levar para vender.</p>';
+    }
+    $('#mim-painel').innerHTML = html;
   }
 
   function renderRevendas() {
@@ -2901,24 +2973,35 @@
   function renderGastos() {
     const card = $('#mim-gastos-card');
     const mes = mesDe(hojeISO());
+    const ant = addMes(mes, -1);
     const doMes = (m) => S.movs.filter((x) => x.tipo === 'gasto' && mesDe(x.data) === m);
+    const porCatDe = (lista) => { const o = {}; lista.forEach((m) => { const c = m.categoria || 'outro'; o[c] = (o[c] || 0) + (Number(m.valor) || 0); }); return o; };
     const lista = doMes(mes);
     if (!lista.length) { card.hidden = true; return; }
     card.hidden = false;
     $('#mim-gastos-titulo').textContent = 'Gastos de ' + nomeMes(mes, false);
-    const porCat = {};
-    lista.forEach((m) => { const c = m.categoria || 'outro'; porCat[c] = (porCat[c] || 0) + (Number(m.valor) || 0); });
+    const porCat = porCatDe(lista);
+    const porCatAnt = porCatDe(doMes(ant));
     const total = Object.values(porCat).reduce((a, v) => a + v, 0);
-    const linhas = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
-    const maior = linhas[0][1] || 1;
-    const passado = doMes(addMes(mes, -1)).reduce((a, m) => a + (Number(m.valor) || 0), 0);
+    const passado = Object.values(porCatAnt).reduce((a, v) => a + v, 0);
+    // categorias deste mês e as que só tiveram gasto no mês passado
+    const cats = Array.from(new Set([...Object.keys(porCat), ...Object.keys(porCatAnt)]));
+    const linhas = cats.map((c) => [c, porCat[c] || 0, porCatAnt[c] || 0]).sort((a, b) => b[1] - a[1] || b[2] - a[2]);
+    const maior = Math.max(...linhas.map((l) => l[1]), 1);
     const meta = plano(S.cfg).meta;
+    const nomeAnt = nomeMes(ant, false);
+    const dif = (v, a) => {
+      if (!(a > 0)) return '<em class="dif novo">novo</em>';
+      const d = r2(v - a);
+      if (Math.abs(d) < 0.005) return '<em class="dif">igual</em>';
+      return '<em class="dif ' + (d > 0 ? 'mais' : 'menos') + '">' + (d > 0 ? '+' : '−') + ' ' + R(Math.abs(d)) + '</em>';
+    };
     let html = '<div class="cat-total"><b>' + R(total) + '</b><small>' + (meta > 0 ? 'de ' + R(meta) + ' que ficam com você no mês' : '') + '</small></div>';
     if (meta > 0) html += '<div class="meter" aria-hidden="true"><i style="width:' + Math.min(100, total / meta * 100).toFixed(1) + '%;background:' + (total > meta ? 'var(--danger)' : 'var(--mine)') + '"></i></div>';
-    html += '<div class="cats">' + linhas.map(([c, v]) =>
+    if (passado > 0) html += '<p class="hint cat-vs">Contra ' + esc(nomeAnt) + ' inteiro (' + R(passado) + '): ' + dif(total, passado) + '</p>';
+    html += '<div class="cats">' + linhas.map(([c, v, a]) =>
       '<div class="cat-row"><span>' + esc(nomeCat(c)) + '</span><span class="cmp-bar"><i style="width:' + (v / maior * 100).toFixed(1) + '%;background:var(--mine)"></i></span>' +
-      '<b>' + R(v) + '<small>' + pct1.format(v / total) + '</small></b></div>').join('') + '</div>';
-    if (passado > 0) html += '<p class="hint">Em ' + esc(nomeMes(addMes(mes, -1), false)) + ' foram ' + R(passado) + '.</p>';
+      '<b>' + R(v) + '<small>' + (passado > 0 ? dif(v, a) : pct1.format(total ? v / total : 0)) + '</small></b></div>').join('') + '</div>';
     $('#mim-gastos').innerHTML = html;
   }
   function renderExtrato() {
@@ -3312,7 +3395,37 @@
     if (window.caixaMov) window.caixaMov.aba(t, antes);
   }
 
+  /* ---------- foto de cada dia ----------
+     Guarda, por dia, o patrimônio e o rendimento acumulado. O resumo de sexta (no servidor) compara
+     a foto mais recente com a de uma semana antes. Só grava quando algum número mudou. */
+  let fotoTimer = null;
+  function agendarFotos() {
+    clearTimeout(fotoTimer);
+    fotoTimer = setTimeout(guardarFotos, 3000);
+  }
+  async function guardarFotos() {
+    if (!S.db || !S.checkins.length || S.ajustes.length) return;
+    if (!Object.values(S.loaded).every(Boolean)) return;
+    const r = rentabilidade(null, 'tudo');
+    if (!r) return;
+    const dias = {};
+    r.datas.forEach((d, i) => {
+      const e = estimativa(d);
+      if (e) dias[d] = { t: r2(e.total), g: r2(r.acum[i]) };
+    });
+    const ks = Object.keys(dias).sort();
+    ks.slice(0, Math.max(0, ks.length - 400)).forEach((k) => delete dias[k]);
+    try {
+      const atual = await S.db.doc('fotos/main').get();
+      const antes = (atual.exists && atual.data().dias) || {};
+      const mudou = Object.keys(dias).length !== Object.keys(antes).length ||
+        Object.entries(dias).some(([k, v]) => !antes[k] || antes[k].t !== v.t || antes[k].g !== v.g);
+      if (mudou) await S.db.doc('fotos/main').set({ dias, salvoEm: new Date().toISOString() });
+    } catch (e) { /* tenta de novo na próxima vez */ }
+  }
+
   function render() {
+    agendarFotos();
     renderMes();
     renderMim();
     renderPatrimonio();
@@ -3591,6 +3704,7 @@
     }, falhou);
     db.collection('cotas').onSnapshot((snap) => {
       S.cotas = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+      S.loaded.cotas = true;
       render();
     }, falhou);
     db.collection('ajustes').onSnapshot((snap) => {
