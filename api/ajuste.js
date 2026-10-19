@@ -27,6 +27,18 @@ export async function GET(request) {
       if (!achou) throw new ErroPedido('Conta não encontrada.', 404);
       return json({ ok: true, conta, cnpj, cotas: await atualizarCotas() });
     }
+    // ?conta=<id>&lugar=<texto> muda onde a conta fica (ex.: "XP · conta em dólar")
+    if (u.searchParams.has('lugar')) {
+      const lugar = (u.searchParams.get('lugar') || '').trim().slice(0, 60);
+      if (!lugar) throw new ErroPedido('Lugar vazio.');
+      let achou = false;
+      await alterar((e) => {
+        const c = ((e.cols.config && e.cols.config.main && e.cols.config.main.contas) || []).find((x) => x.id === conta);
+        if (c) { c.lugar = lugar; achou = true; }
+      });
+      if (!achou) throw new ErroPedido('Conta não encontrada.', 404);
+      return json({ ok: true, conta, lugar });
+    }
     const valor = Number(u.searchParams.get('valor'));
     const data = u.searchParams.get('data') || '';
     if (!/^[A-Za-z0-9_.\-]{1,80}$/.test(conta) || !(valor >= 0) || !/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new ErroPedido('Pedido inválido.');
