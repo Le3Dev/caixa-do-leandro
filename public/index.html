@@ -1756,10 +1756,11 @@
         }
         it.hoje = it.usd * dol.v;
         ganhoDolar += v * (dol.v - cotCk);
-      } else if (it.cnpj && temCota(it.cnpj)) {
-        // fundo: anda junto com a cota do dia divulgada na CVM
-        it.hoje = v * fatorCota(it.cnpj, ck.data, iso, true, orig.cotaRef);
-        const qd = cotaEm(it.cnpj, iso);
+      } else if ((it.cnpj || it.ticker) && temCota(it.cnpj || it.ticker)) {
+        // fundo: anda junto com a cota do dia divulgada na CVM; ação: com o preço de fechamento
+        const k = it.cnpj || it.ticker;
+        it.hoje = v * fatorCota(k, ck.data, iso, true, orig.cotaRef);
+        const qd = cotaEm(k, iso);
         it.cotaData = qd.data;
         it.cotaPrevia = qd.previa;
         ganhoRenda += it.hoje - v;
@@ -1819,7 +1820,7 @@
         it.usd = (it.usd || 0) + us;
         soma = us * dol.v;
       }
-      else if (it.cnpj && temCota(it.cnpj)) { soma = valor * fatorCota(it.cnpj, a.data, iso); ganhoRenda += soma - valor; }
+      else if ((it.cnpj || it.ticker) && temCota(it.cnpj || it.ticker)) { soma = valor * fatorCota(it.cnpj || it.ticker, a.data, iso); ganhoRenda += soma - valor; }
       else if (it.renda) { soma = cresce(valor, it.renda, a.data); ganhoRenda += soma - valor; }
       else soma = valor;
       it.hoje += soma;
@@ -2707,6 +2708,24 @@
     });
     return { brl, usd };
   }
+  /* Entradas e saídas anotadas num check-in para uma conta (ex.: ações que chegaram de outra corretora).
+     Valor positivo = entrou. Não contam como rendimento. Devolve [{ conta, brl, usd }]. */
+  function fluxosEm(iso, filtro) {
+    const ck = S.checkins.find((c) => c.data === iso);
+    if (!ck || !Array.isArray(ck.fluxos)) return [];
+    const contas = (S.cfg && S.cfg.contas) || [];
+    const out = [];
+    ck.fluxos.forEach((f) => {
+      const c = contas.find((x) => x.id === f.conta);
+      if (!c) return;
+      if (filtro && String(c.lugar || '').split(' · ')[0].trim() !== filtro) return;
+      const v = Number(f.valor) || 0;
+      let brl = v;
+      if (c.moeda === 'USD') { const e = estimativa(iso); brl = v * (e && e.dol.v > 0 ? e.dol.v : 0); }
+      out.push({ conta: c.id, brl, usd: c.moeda === 'USD' });
+    });
+    return out;
+  }
   const memo = {};
   function lembrar(nome, args, fn) {
     const k = nome + '|' + (S.geracao || 0) + '|' + hojeISO() + '|' + JSON.stringify(args);
@@ -2733,7 +2752,11 @@
     S.aportes.forEach((a) => { if (ids.has(a.contaId)) aplicado[a.data] = (aplicado[a.data] || 0) + (Number(a.valor) || 0); });
     const datas = [ini];
     while (datas[datas.length - 1] < hoje) datas.push(somaDia(datas[datas.length - 1], 1));
-    datas.slice(1).forEach((d) => { const c = custosEm(d, filtro); if (c.brl || c.usd) aplicado[d] = (aplicado[d] || 0) - c.brl - c.usd; });
+    datas.slice(1).forEach((d) => {
+      const c = custosEm(d, filtro);
+      if (c.brl || c.usd) aplicado[d] = (aplicado[d] || 0) - c.brl - c.usd;
+      fluxosEm(d, filtro).forEach((f) => { aplicado[d] = (aplicado[d] || 0) + f.brl; });
+    });
     let ant = inv(ini), fC = 1, fD = 1, ganho = 0;
     const cart = [0], cdi = [0], acum = [0];
     for (let i = 1; i < datas.length; i++) {
@@ -2782,9 +2805,13 @@
         const it = agora[id] || modelo[id] || ant[id];
         soma(id, m - a0 - (ap[d + '|' + id] || 0), it);
         base[id] = (base[id] || 0) + (ap[d + '|' + id] || 0);
-        if (it.moeda === 'USD') { acertoUSD += a1 - m; if (a1 - m > 0) base[id] += a1 - m; } else soma(id, a1 - m, it);
+        if (it.moeda === 'USD') { acertoUSD += a1 - m; if (a1 - m > 0) base[id] += a1 - m; } else { soma(id, a1 - m, it); if (!ant[id] && a1 > 0) base[id] = (base[id] || 0) + a1; }
       });
       acertoUSD += custosEm(d, filtro).usd; // a corretagem não é perda de mercado
+      fluxosEm(d, filtro).forEach((f) => {
+        base[f.conta] = (base[f.conta] || 0) + Math.max(0, f.brl);
+        if (f.usd) acertoUSD -= f.brl; else soma(f.conta, -f.brl);
+      });
       ant = agora;
     }
     const linhas = Object.entries(tot).map(([id, v]) => ({ id, v, it: info[id], pct: base[id] > 0.5 ? v / base[id] * 100 : null })).filter((x) => x.it && Math.abs(x.v) >= 0.005);

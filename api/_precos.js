@@ -22,6 +22,29 @@ async function cnbc(ticker) {
   return { datas, moeda: 'USD', fonte: 'CNBC' };
 }
 
+// Ações e FIIs da B3 (ex.: VALE3): brapi.dev (sem chave para os mais negociados); a CNBC usa o sufixo -BR.
+const ehB3 = (t) => /^[A-Z]{4}\d{1,2}$/.test(t);
+async function brapi(ticker) {
+  if (!ehB3(ticker)) throw new Error('brapi: não é B3');
+  const r = await fetch('https://brapi.dev/api/quote/' + encodeURIComponent(ticker) + '?range=3mo&interval=1d', { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error('brapi ' + ticker + ': ' + r.status);
+  const j = await r.json();
+  const res = j && j.results && j.results[0];
+  const hist = (res && res.historicalDataPrice) || [];
+  const datas = {};
+  hist.forEach((h) => {
+    const v = Number(h.close);
+    if (v > 0 && h.date) datas[new Date((Number(h.date) - 3 * 3600) * 1000).toISOString().slice(0, 10)] = v;
+  });
+  if (!Object.keys(datas).length) throw new Error('brapi ' + ticker + ': sem preços');
+  return { datas, moeda: 'BRL', fonte: 'brapi' };
+}
+async function cnbcB3(ticker) {
+  if (!ehB3(ticker)) throw new Error('CNBC B3: não é B3');
+  const p = await cnbc(ticker + '-BR');
+  return Object.assign(p, { moeda: 'BRL', fonte: 'CNBC' });
+}
+
 async function nasdaq(ticker) {
   const de = new Date(Date.now() - 100 * 864e5).toISOString().slice(0, 10);
   for (const classe of ['etf', 'stocks']) {
@@ -58,6 +81,11 @@ async function yahoo(ticker) {
   return { datas, moeda: (res.meta && res.meta.currency) || null, fonte: 'Yahoo Finance' };
 }
 
+async function yahooB3(ticker) {
+  const p = await yahoo(ticker + '.SA');
+  return Object.assign(p, { moeda: 'BRL' });
+}
+
 async function stooq(ticker) {
   const s = ticker.includes('.') ? ticker.toLowerCase().replace(/\.l$/, '.uk') : ticker.toLowerCase() + '.us';
   const r = await fetch('https://stooq.com/q/d/l/?s=' + encodeURIComponent(s) + '&i=d', { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(15000) });
@@ -83,7 +111,8 @@ export async function buscarPrecos(tickers) {
   const erros = {};
   await Promise.all([...new Set(tickers.filter(tickerOk))].map(async (t) => {
     const msgs = [];
-    for (const fonte of [cnbc, nasdaq, yahoo, stooq]) {
+    const fontes = ehB3(t) ? [brapi, cnbcB3, yahooB3] : [cnbc, nasdaq, yahoo, stooq];
+    for (const fonte of fontes) {
       try { out[t] = await fonte(t); return; } catch (e) { msgs.push(String(e && e.message)); }
     }
     erros[t] = msgs.join(' / ');

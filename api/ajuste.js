@@ -99,13 +99,29 @@ export async function GET(request) {
       const ref = u.searchParams.get('ref');
       const valor = u.searchParams.has('valor') ? Number(u.searchParams.get('valor')) : null;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || (valor != null && !(valor >= 0)) || (ref && ref !== '-' && !/^\d{4}-\d{2}-\d{2}$/.test(ref))) throw new ErroPedido('Pedido inválido.');
+      // &fluxo=<valor> anota que esse valor entrou (+) ou saiu (−) da conta nesse dia sem ser rendimento
+      const fluxo = u.searchParams.has('fluxo') ? Number(u.searchParams.get('fluxo')) : null;
       let item = null;
       await alterar((e) => {
         const ck = e.cols.checkins && e.cols.checkins[data];
-        const it = ck && (ck.itens || []).find((x) => x.id === conta);
-        if (!it) return;
+        if (!ck) return;
+        let it = (ck.itens || []).find((x) => x.id === conta);
+        if (!it) {
+          // conta nova nesse check-in: entra com os dados de Ajustes
+          const c = ((e.cols.config && e.cols.config.main && e.cols.config.main.contas) || []).find((x) => x.id === conta);
+          if (!c || valor == null) return;
+          it = { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, valor: 0 };
+          ck.itens.push(it);
+        }
         if (valor != null) it.valor = Math.round(valor * 10000) / 10000;
         if (ref === '-') delete it.cotaRef; else if (ref) it.cotaRef = ref;
+        if (fluxo != null && Number.isFinite(fluxo)) {
+          ck.fluxos = (ck.fluxos || []).filter((f) => f.conta !== conta);
+          if (fluxo) ck.fluxos.push({ conta, valor: Math.round(fluxo * 100) / 100, desc: (u.searchParams.get('desc') || '').slice(0, 60) || null });
+          if (!ck.fluxos.length) delete ck.fluxos;
+        }
+        // os lançamentos de hoje registrados antes disso já estão nos valores
+        if (u.searchParams.has('agora')) ck.salvoEm = new Date().toISOString();
         item = Object.assign({}, it);
       });
       if (!item) throw new ErroPedido('Check-in ou conta não encontrados.', 404);
