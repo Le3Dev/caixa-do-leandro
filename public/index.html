@@ -1681,11 +1681,14 @@
   function dolarPara(ck, iso) {
     let v = Number(ck.cotacaoDolar) || 0;
     let data = ck.data;
-    // no dia do check-in vale a cotação que você anotou nele; depois, a do Banco Central
-    const valeAnotada = v > 0;
-    S.hist.forEach((h) => { if (h.data <= iso && (valeAnotada ? h.data > data : h.data >= data) && Number(h.dolar) > 0) { v = Number(h.dolar); data = h.data; } });
+    // No dia do check-in vale a cotação que você anotou nele; depois, a do Banco Central.
+    // Num acerto automático a cotação não foi anotada por você: vale a do Banco Central mais recente.
+    const anotada = v > 0 && ck.origem !== 'acerto';
+    if (!anotada) data = '';
+    S.hist.forEach((h) => { if (h.data <= iso && (anotada ? h.data > data : h.data >= data) && Number(h.dolar) > 0) { v = Number(h.dolar); data = h.data; } });
     const m = S.mercado;
-    if (m && Number(m.dolar) > 0 && m.dolarData && m.dolarData <= iso && (valeAnotada ? m.dolarData > ck.data : m.dolarData >= data) && m.dolarData >= data) { v = Number(m.dolar); data = m.dolarData; }
+    if (m && Number(m.dolar) > 0 && m.dolarData && m.dolarData <= iso && (anotada ? m.dolarData > ck.data : true) && m.dolarData >= data) { v = Number(m.dolar); data = m.dolarData; }
+    if (!data) data = ck.data;
     return { v, data };
   }
   /* Um lançamento ainda não está no check-in quando é de um dia depois dele,
@@ -2738,7 +2741,7 @@
       ant = agora;
     }
     const linhas = Object.entries(tot).map(([id, v]) => ({ id, v, it: info[id] })).filter((x) => x.it && Math.abs(x.v) >= 0.005);
-    if (Math.abs(acertoUSD) >= 0.005) linhas.push({ id: '_acerto_usd', v: acertoUSD, it: { nome: 'Acertos no exterior', lugar: 'Diferença ao atualizar os saldos em dólar (ex.: corretagem)' } });
+    if (Math.abs(acertoUSD) >= 0.005) linhas.push({ id: '_acerto_usd', v: acertoUSD, it: { nome: 'Corretagem e acertos em dólar', lugar: 'Ao atualizar os saldos em dólar' } });
     linhas.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
     return { linhas, total: r.ganho };
   }
