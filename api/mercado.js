@@ -1,25 +1,36 @@
 import { json, falha, autorizado, alterar, lerEstado, guardarCopia, ErroPedido } from './_lib.js';
 import { buscarCotas } from './_cotas.js';
+import { buscarPrecos } from './_precos.js';
 
-/* Cotas dos fundos que têm CNPJ em Ajustes. Guarda até 120 dias de cada um. */
+/* Cotas dos fundos que têm CNPJ em Ajustes e preço diário dos ETFs/ações no exterior que têm código
+   (ticker). Guarda até 120 dias de cada um, na mesma coleção "cotas". */
 export async function atualizarCotas() {
   const { estado } = await lerEstado();
   const contas = (estado.cols.config && estado.cols.config.main && estado.cols.config.main.contas) || [];
   const cnpjs = contas.map((c) => c.cnpj).filter(Boolean);
-  if (!cnpjs.length) return {};
+  const tickers = contas.map((c) => c.ticker).filter(Boolean);
+  if (!cnpjs.length && !tickers.length) return {};
   const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
-  const novas = await buscarCotas(cnpjs, hoje, 2);
+  const [fundos, bolsa] = await Promise.all([
+    cnpjs.length ? buscarCotas(cnpjs, hoje, 2).catch((e) => { console.error('cotas CVM', e); return {}; }) : {},
+    tickers.length ? buscarPrecos(tickers) : { precos: {}, erros: {} },
+  ]);
+  const novas = Object.assign({}, fundos, Object.fromEntries(Object.entries(bolsa.precos).map(([t, p]) => [t, p.datas])));
   await alterar((e) => {
     e.cols.cotas = e.cols.cotas || {};
-    for (const [cnpj, datas] of Object.entries(novas)) {
-      const doc = e.cols.cotas[cnpj] = e.cols.cotas[cnpj] || { cnpj, datas: {} };
+    for (const [chave, datas] of Object.entries(novas)) {
+      const p = bolsa.precos[chave];
+      const doc = e.cols.cotas[chave] = e.cols.cotas[chave] || (p ? { ticker: chave, datas: {} } : { cnpj: chave, datas: {} });
       Object.assign(doc.datas, datas);
+      if (p) { doc.moeda = p.moeda || doc.moeda || null; doc.fonte = p.fonte; }
       const ks = Object.keys(doc.datas).sort();
       ks.slice(0, Math.max(0, ks.length - 120)).forEach((k) => delete doc.datas[k]);
       doc.atualizadoEm = new Date().toISOString();
     }
   });
-  return Object.fromEntries(Object.entries(novas).map(([c, d]) => { const ks = Object.keys(d).sort(); return [c, { dias: ks.length, ultima: ks[ks.length - 1], cota: d[ks[ks.length - 1]] }]; }));
+  const resumo = Object.fromEntries(Object.entries(novas).map(([c, d]) => { const ks = Object.keys(d).sort(); return [c, { dias: ks.length, ultima: ks[ks.length - 1], cota: d[ks[ks.length - 1]] }]; }));
+  for (const [t, m] of Object.entries(bolsa.erros)) resumo[t] = { erro: m };
+  return resumo;
 }
 
 // Dólar PTAX de venda, CDI anualizado, Selic meta e IPCA de 12 meses, direto do Banco Central.

@@ -1657,8 +1657,9 @@
     Object.keys(d).forEach((k) => { if (k < iso && (!best || k > best)) best = k; });
     return best ? { data: best, v: Number(d[best]) } : cotaEm(cnpj, iso);
   }
-  function fatorCota(cnpj, de, ate, doCheckin) {
-    const a = doCheckin ? cotaAntes(cnpj, de) : cotaEm(cnpj, de), b = cotaEm(cnpj, ate);
+  // ref: o dia da cota/preço a que o valor do check-in corresponde (quando o app sabe exatamente)
+  function fatorCota(cnpj, de, ate, doCheckin, ref) {
+    const a = ref ? cotaEm(cnpj, ref) : doCheckin ? cotaAntes(cnpj, de) : cotaEm(cnpj, de), b = cotaEm(cnpj, ate);
     return a && b && a.v > 0 ? b.v / a.v : 1;
   }
   function dolarPara(ck, iso) {
@@ -1698,7 +1699,7 @@
     (ck.itens || []).forEach((orig) => {
       // nome, lugar e tipo vêm de Ajustes, para um nome novo valer também nos check-ins antigos
       const c = contasCfg.find((x) => x.id === orig.id);
-      const it = Object.assign({}, orig, c ? { nome: c.nome, lugar: c.lugar, tipo: c.tipo, cnpj: c.cnpj } : {});
+      const it = Object.assign({}, orig, c ? { nome: c.nome, lugar: c.lugar, tipo: c.tipo, cnpj: c.cnpj, ticker: c.ticker } : {});
       it.renda = it.moeda === 'USD' ? null : rendaDe(it.id);
       it.aportado = 0;
       if (it.valor == null || !Number.isFinite(Number(it.valor))) {
@@ -1711,11 +1712,18 @@
       }
       const v = Number(it.valor);
       if (it.moeda === 'USD') {
-        it.hoje = v * dol.v;
+        // em dólar: ETF/ação anda com o preço de fechamento; tudo vira real pela cotação do dia
+        it.usd = v;
+        if (it.ticker && temCota(it.ticker)) {
+          it.usd = v * fatorCota(it.ticker, ck.data, iso, true, orig.cotaRef);
+          it.cotaData = cotaEm(it.ticker, iso).data;
+          ganhoRenda += (it.usd - v) * dol.v;
+        }
+        it.hoje = it.usd * dol.v;
         ganhoDolar += v * (dol.v - cotCk);
       } else if (it.cnpj && temCota(it.cnpj)) {
         // fundo: anda junto com a cota do dia divulgada na CVM
-        it.hoje = v * fatorCota(it.cnpj, ck.data, iso, true);
+        it.hoje = v * fatorCota(it.cnpj, ck.data, iso, true, orig.cotaRef);
         it.cotaData = cotaEm(it.cnpj, iso).data;
         ganhoRenda += it.hoje - v;
       } else if (it.renda && du > 0) {
@@ -1758,7 +1766,7 @@
       if (!it) {
         const c = contasCfg.find((x) => x.id === a.contaId);
         if (!c) return;
-        it = { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, cnpj: c.cnpj, valor: 0, hoje: 0, renda: c.moeda === 'USD' ? null : rendaDe(c.id), aportado: 0 };
+        it = { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, cnpj: c.cnpj, ticker: c.ticker, valor: 0, hoje: 0, usd: 0, renda: c.moeda === 'USD' ? null : rendaDe(c.id), aportado: 0 };
         itens.push(it);
       }
       if (it.hoje == null) {
@@ -1768,7 +1776,12 @@
       }
       const valor = Number(a.valor) || 0;
       let soma;
-      if (it.moeda === 'USD') soma = (Number(a.valorMoeda) || 0) * dol.v;
+      if (it.moeda === 'USD') {
+        let us = Number(a.valorMoeda) || 0;
+        if (it.ticker && temCota(it.ticker)) { const f = fatorCota(it.ticker, a.data, iso); ganhoRenda += us * (f - 1) * dol.v; us *= f; }
+        it.usd = (it.usd || 0) + us;
+        soma = us * dol.v;
+      }
       else if (it.cnpj && temCota(it.cnpj)) { soma = valor * fatorCota(it.cnpj, a.data, iso); ganhoRenda += soma - valor; }
       else if (it.renda) { soma = cresce(valor, it.renda, a.data); ganhoRenda += soma - valor; }
       else soma = valor;
@@ -1799,11 +1812,12 @@
     try {
       // acertos do mesmo dia viram um check-in só
       const porData = {};
-      S.ajustes.forEach((aj) => { (porData[aj.data] = porData[aj.data] || []).push(aj); });
+      S.ajustes.forEach((aj) => { if (aj.data <= hojeISO()) (porData[aj.data] = porData[aj.data] || []).push(aj); });
       for (const data of Object.keys(porData).sort()) {
         const grupo = porData[data];
         const acertos = {};
-        grupo.forEach((aj) => { if ((S.cfg.contas || []).some((c) => c.id === aj.contaId)) acertos[aj.contaId] = Number(aj.valor); });
+        const refs = {};
+        grupo.forEach((aj) => { if ((S.cfg.contas || []).some((c) => c.id === aj.contaId)) { acertos[aj.contaId] = Number(aj.valor); if (aj.cotaRef) refs[aj.contaId] = aj.cotaRef; } });
         const aj = { data };
         if (Object.keys(acertos).length) {
           const e = estimativa(aj.data);
@@ -1812,9 +1826,16 @@
             if (c.id in acertos) v = acertos[c.id];
             else {
               const it = e && e.itens.find((i) => i.id === c.id);
-              v = !it || it.hoje == null ? null : c.moeda === 'USD' ? (e.dol.v > 0 ? it.hoje / e.dol.v : Number(it.valor)) : it.hoje;
+              v = !it || it.hoje == null ? null : c.moeda === 'USD' ? (it.usd != null ? it.usd : e.dol.v > 0 ? it.hoje / e.dol.v : Number(it.valor)) : it.hoje;
             }
-            return { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, valor: v == null ? null : r2(v) };
+            const item = { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, valor: v == null ? null : c.moeda === 'USD' ? Math.round(v * 10000) / 10000 : r2(v) };
+            // fundos e ETFs: guarda de que dia é a cota/preço por trás do valor, para não contar a variação duas vezes
+            const k = c.cnpj || c.ticker;
+            if (v != null && k && temCota(k)) {
+              if (c.id in acertos) { if (refs[c.id]) item.cotaRef = refs[c.id]; }
+              else { const q = cotaEm(k, aj.data); if (q) item.cotaRef = q.data; }
+            }
+            return item;
           });
           await S.db.doc('checkins/' + aj.data).set({ data: aj.data, itens, cotacaoDolar: e && e.dol.v > 0 ? e.dol.v : null, salvoEm: new Date().toISOString(), origem: 'acerto' });
           const nomes = Object.keys(acertos).map((id) => (S.cfg.contas.find((c) => c.id === id) || {}).nome).filter(Boolean);
@@ -2602,9 +2623,9 @@
       if (it.hoje == null) return '<div class="row"><span class="row-name">' + esc(it.nome) + '<small>' + esc(it.lugar) + '</small></span><span class="row-val none">sem valor</span></div>';
       let sub = esc(it.lugar);
       if (it.renda) sub += ' · ' + esc(it.renda.rotulo);
-      if (it.cotaData) sub += ' · cota de ' + dataCurta(it.cotaData);
+      if (it.cotaData) sub += (it.ticker ? ' · ' + esc(it.ticker) + ' · preço de ' : ' · cota de ') + dataCurta(it.cotaData);
       let extra = '';
-      if (it.moeda === 'USD') extra = '<small>US$ ' + num2.format(it.valor) + '</small>';
+      if (it.moeda === 'USD') extra = '<small>US$ ' + num2.format(it.usd != null ? it.usd : it.valor) + '</small>';
       else if (Math.abs(it.hoje - Number(it.valor)) >= 0.005) extra = '<small>' + RS(it.hoje - Number(it.valor)) + ' desde o check-in</small>';
       return '<div class="row"><span class="row-name">' + esc(it.nome) + '<small>' + sub + '</small></span><span class="row-val">' + R(it.hoje) + extra + '</span></div>';
     });
