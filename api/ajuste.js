@@ -28,6 +28,50 @@ export async function GET(request) {
       if (!achou) throw new ErroPedido('Conta não encontrada.', 404);
       return json({ ok: true, conta, cnpj, cotas: await atualizarCotas() });
     }
+    // ?calibrar=1 compara a cota diária dos fundos com ETFs de referência (temporário)
+    if (u.searchParams.has('calibrar')) {
+      const { buscarPrecos } = await import('./_precos.js');
+      const { lerEstado } = await import('./_lib.js');
+      const { estado } = await lerEstado();
+      const cotas = estado.cols.cotas || {};
+      const hist = estado.cols.mercado_hist || {};
+      const cands = (u.searchParams.get('cands') || 'GLD,IAU,AIQ,ARTY,QQQ,XLK,SMH,BOTZ,IGPT,VGT,WTAI,BRL=').split(',');
+      const { precos, erros } = await buscarPrecos(cands);
+      const ptax = (d) => { let v = null; Object.keys(hist).sort().forEach((k) => { if (k <= d && hist[k].dolar) v = hist[k].dolar; }); return v; };
+      const fx = precos['BRL='] ? precos['BRL='].datas : null;
+      const fxEm = (d) => { if (!fx) return null; let v = null; Object.keys(fx).sort().forEach((k) => { if (k <= d) v = fx[k]; }); return v; };
+      const out = { erros, fxUltimos: fx ? Object.entries(fx).slice(-3) : null };
+      for (const cnpj of ['22963439000152', '44431925000162']) {
+        const q = (cotas[cnpj] && cotas[cnpj].datas) || {};
+        const ds = Object.keys(q).sort();
+        const rf = [];
+        for (let i = 1; i < ds.length; i++) rf.push([ds[i], q[ds[i]] / q[ds[i - 1]] - 1, ds[i - 1]]);
+        const res = {};
+        for (const [t, p] of Object.entries(precos)) {
+          if (t === 'BRL=') continue;
+          const px = (d) => { let v = null; Object.keys(p.datas).sort().forEach((k) => { if (k <= d) v = p.datas[k]; }); return v; };
+          for (const modo of ['ptax', 'spot', 'usd']) {
+            for (const lag of [0, 1]) {
+              const pares = rf.map(([d, r, d0]) => {
+                const a = lag ? Object.keys(p.datas).sort().filter((k) => k < d0).pop() : d0;
+                const b = lag ? Object.keys(p.datas).sort().filter((k) => k < d).pop() : d;
+                if (!a || !b) return null;
+                const f = modo === 'ptax' ? [ptax(a), ptax(b)] : modo === 'spot' ? [fxEm(a), fxEm(b)] : [1, 1];
+                if (!f[0] || !f[1] || !px(a) || !px(b)) return null;
+                return [r, (px(b) * f[1]) / (px(a) * f[0]) - 1];
+              }).filter(Boolean);
+              if (pares.length < 10) continue;
+              const n = pares.length, mx = pares.reduce((s2, x) => s2 + x[0], 0) / n, my = pares.reduce((s2, x) => s2 + x[1], 0) / n;
+              let sxy = 0, sxx = 0, syy = 0, te = 0;
+              pares.forEach(([x, y]) => { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; te += (x - y) ** 2; });
+              res[t + ':' + modo + ':lag' + lag] = { n, corr: +(sxy / Math.sqrt(sxx * syy)).toFixed(3), beta: +(sxy / syy).toFixed(2), te: +(Math.sqrt(te / n) * 100).toFixed(3) };
+            }
+          }
+        }
+        out[cnpj] = Object.entries(res).sort((a, b) => a[1].te - b[1].te).slice(0, 12);
+      }
+      return json(out);
+    }
     // ?nova=1&conta=<id>&nome=<nome>&lugar=<onde>&moeda=BRL|USD cria uma conta de investimento
     if (u.searchParams.has('nova')) {
       if (!/^[a-z0-9_\-]{2,40}$/.test(conta)) throw new ErroPedido('Id inválido.');
