@@ -2671,6 +2671,20 @@
     if (v == null && S.mercado && Number(S.mercado.cdi) > 0) v = Number(S.mercado.cdi);
     return v;
   }
+  /* Corretagem e outros custos anotados num check-in, em reais, para a instituição do filtro (null = todas).
+     Saem da carteira como uma retirada: não contam como rendimento negativo. */
+  function custosEm(iso, filtro) {
+    const ck = S.checkins.find((c) => c.data === iso);
+    if (!ck || !Array.isArray(ck.custos)) return { brl: 0, usd: 0 };
+    let brl = 0, usd = 0;
+    ck.custos.forEach((c) => {
+      if (filtro && c.inst && c.inst !== filtro) return;
+      const v = Number(c.valor) || 0;
+      if (c.moeda === 'USD') { const e = estimativa(iso); usd += v * (e && e.dol.v > 0 ? e.dol.v : 0); }
+      else brl += v;
+    });
+    return { brl, usd };
+  }
   function rentabilidade(filtro, per) {
     const primeiro = S.checkins[0];
     if (!primeiro) return null;
@@ -2690,6 +2704,7 @@
     S.aportes.forEach((a) => { if (ids.has(a.contaId)) aplicado[a.data] = (aplicado[a.data] || 0) + (Number(a.valor) || 0); });
     const datas = [ini];
     while (datas[datas.length - 1] < hoje) datas.push(somaDia(datas[datas.length - 1], 1));
+    datas.slice(1).forEach((d) => { const c = custosEm(d, filtro); if (c.brl || c.usd) aplicado[d] = (aplicado[d] || 0) - c.brl - c.usd; });
     let ant = inv(ini), fC = 1, fD = 1, ganho = 0;
     const cart = [0], cdi = [0], acum = [0];
     for (let i = 1; i < datas.length; i++) {
@@ -2738,10 +2753,11 @@
         soma(id, m - a0 - (ap[d + '|' + id] || 0), it);
         if (it.moeda === 'USD') acertoUSD += a1 - m; else soma(id, a1 - m, it);
       });
+      acertoUSD += custosEm(d, filtro).usd; // a corretagem não é perda de mercado
       ant = agora;
     }
     const linhas = Object.entries(tot).map(([id, v]) => ({ id, v, it: info[id] })).filter((x) => x.it && Math.abs(x.v) >= 0.005);
-    if (Math.abs(acertoUSD) >= 0.005) linhas.push({ id: '_acerto_usd', v: acertoUSD, it: { nome: 'Corretagem e acertos em dólar', lugar: 'Ao atualizar os saldos em dólar' } });
+    if (Math.abs(acertoUSD) >= 0.05) linhas.push({ id: '_acerto_usd', v: acertoUSD, it: { nome: 'Acertos em dólar', lugar: 'Ao atualizar os saldos em dólar' } });
     linhas.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
     return { linhas, total: r.ganho };
   }

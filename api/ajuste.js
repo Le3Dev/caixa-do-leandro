@@ -93,6 +93,26 @@ export async function GET(request) {
       const doc = c && c.cnpj && estado.cols.cotas[c.cnpj];
       return json({ ok: true, conta, proxy, beta, ultimaOficial: doc && Object.keys(doc.datas).sort().slice(-2).map((k) => [k, doc.datas[k]]), previa: doc && doc.previa });
     }
+    // ?custo=<valor>&moeda=USD|BRL&data=AAAA-MM-DD[&inst=XP][&desc=Corretagem] anota um custo (ex.: corretagem)
+    // no check-in daquele dia: sai da carteira como retirada e não conta como perda de rendimento. custo=0 tira.
+    if (u.searchParams.has('custo')) {
+      const valor = Number(u.searchParams.get('custo'));
+      const data = u.searchParams.get('data') || '';
+      const moeda = u.searchParams.get('moeda') === 'USD' ? 'USD' : 'BRL';
+      const inst = (u.searchParams.get('inst') || '').trim().slice(0, 30) || null;
+      const desc = (u.searchParams.get('desc') || 'Corretagem').trim().slice(0, 60);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || !(valor >= 0)) throw new ErroPedido('Pedido inválido.');
+      let achou = false;
+      await alterar((e) => {
+        const ck = e.cols.checkins && e.cols.checkins[data];
+        if (!ck) return;
+        achou = true;
+        if (valor > 0) ck.custos = [{ valor: Math.round(valor * 100) / 100, moeda, inst, desc }];
+        else delete ck.custos;
+      });
+      if (!achou) throw new ErroPedido('Não há check-in nesse dia.', 404);
+      return json({ ok: true, data, custo: valor, moeda, inst });
+    }
     // ?conta=<id>&lugar=<texto> muda onde a conta fica (ex.: "XP · conta em dólar")
     if (u.searchParams.has('lugar')) {
       const lugar = (u.searchParams.get('lugar') || '').trim().slice(0, 60);
