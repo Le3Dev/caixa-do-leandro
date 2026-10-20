@@ -28,28 +28,6 @@ export async function GET(request) {
       if (!achou) throw new ErroPedido('Conta não encontrada.', 404);
       return json({ ok: true, conta, cnpj, cotas: await atualizarCotas() });
     }
-    // ?sonda=1 testa de quais fontes de preço o servidor consegue ler (temporário)
-    if (u.searchParams.has('sonda')) {
-      const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
-      const urls = {
-        y2: 'https://query2.finance.yahoo.com/v8/finance/chart/SEURF?range=1mo&interval=1d',
-        y1spark: 'https://query1.finance.yahoo.com/v7/finance/spark?symbols=SEURF&range=1mo&interval=1d',
-        cnbc: 'https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=SEURF%7CXTMWF%7CIBIT&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json',
-        cnbcHist: 'https://ts-api.cnbc.com/harmony/app/charts/1M.json?symbol=SEURF',
-        nasdaq: 'https://api.nasdaq.com/api/quote/IBIT/historical?assetclass=etf&fromdate=2026-09-20&limit=30',
-        otc: 'https://backend.otcmarkets.com/otcapi/stock/trade/inside/SEURF?symbol=SEURF',
-        google: 'https://www.google.com/finance/quote/IBIT:NASDAQ',
-      };
-      const out = {};
-      await Promise.all(Object.entries(urls).map(async ([k, url]) => {
-        try {
-          const r = await fetch(url, { headers: { 'user-agent': UA, accept: 'application/json,text/html;q=0.9,*/*;q=0.8', 'accept-language': 'en-US,en;q=0.9' }, signal: AbortSignal.timeout(12000) });
-          const t = await r.text();
-          out[k] = { status: r.status, tam: t.length, ini: t.slice(0, 300) };
-        } catch (e) { out[k] = { erro: String(e && e.message) }; }
-      }));
-      return json(out);
-    }
     // ?nova=1&conta=<id>&nome=<nome>&lugar=<onde>&moeda=BRL|USD cria uma conta de investimento
     if (u.searchParams.has('nova')) {
       if (!/^[a-z0-9_\-]{2,40}$/.test(conta)) throw new ErroPedido('Id inválido.');

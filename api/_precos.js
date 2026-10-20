@@ -1,8 +1,44 @@
 // Preço de fechamento diário de ETFs e ações no exterior (ex.: IBIT, SEURF, XTMWF).
-// Fonte principal: gráfico diário do Yahoo Finance; se falhar, o CSV diário do Stooq.
+// Fonte principal: gráfico diário público da CNBC (lê OTC como SEURF/XTMWF e ETFs dos EUA como IBIT).
+// Se falhar: histórico da Nasdaq (só EUA), depois Yahoo e Stooq (que costumam barrar servidores).
 // Devolve { TICKER: { datas: { 'AAAA-MM-DD': preço }, moeda, fonte } }.
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+
+async function cnbc(ticker) {
+  const r = await fetch('https://ts-api.cnbc.com/harmony/app/charts/1M.json?symbol=' + encodeURIComponent(ticker), { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error('CNBC ' + ticker + ': ' + r.status);
+  const j = await r.json();
+  const barras = (j && j.barData && j.barData.priceBars) || [];
+  const datas = {};
+  barras.forEach((b) => {
+    const t = String(b.tradeTime || '');
+    const v = Number(b.close);
+    if (/^\d{8}/.test(t) && v > 0) datas[t.slice(0, 4) + '-' + t.slice(4, 6) + '-' + t.slice(6, 8)] = Math.round(v * 10000) / 10000;
+  });
+  const ks = Object.keys(datas).sort();
+  if (!ks.length) throw new Error('CNBC ' + ticker + ': sem preços');
+  ks.slice(0, Math.max(0, ks.length - 90)).forEach((k) => delete datas[k]);
+  return { datas, moeda: 'USD', fonte: 'CNBC' };
+}
+
+async function nasdaq(ticker) {
+  const de = new Date(Date.now() - 100 * 864e5).toISOString().slice(0, 10);
+  for (const classe of ['etf', 'stocks']) {
+    const r = await fetch('https://api.nasdaq.com/api/quote/' + encodeURIComponent(ticker) + '/historical?assetclass=' + classe + '&fromdate=' + de + '&limit=100', { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+    if (!r.ok) continue;
+    const j = await r.json();
+    const linhas = (j && j.data && j.data.tradesTable && j.data.tradesTable.rows) || [];
+    const datas = {};
+    linhas.forEach((l) => {
+      const m = String(l.date || '').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      const v = Number(String(l.close || '').replace(/[$,]/g, ''));
+      if (m && v > 0) datas[m[3] + '-' + m[1] + '-' + m[2]] = v;
+    });
+    if (Object.keys(datas).length) return { datas, moeda: 'USD', fonte: 'Nasdaq' };
+  }
+  throw new Error('Nasdaq ' + ticker + ': sem preços');
+}
 
 async function yahoo(ticker) {
   const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(ticker) + '?range=3mo&interval=1d&includePrePost=false';
@@ -46,9 +82,11 @@ export async function buscarPrecos(tickers) {
   const out = {};
   const erros = {};
   await Promise.all([...new Set(tickers.filter(tickerOk))].map(async (t) => {
-    try { out[t] = await yahoo(t); } catch (e1) {
-      try { out[t] = await stooq(t); } catch (e2) { erros[t] = String(e1.message) + ' / ' + String(e2.message); }
+    const msgs = [];
+    for (const fonte of [cnbc, nasdaq, yahoo, stooq]) {
+      try { out[t] = await fonte(t); return; } catch (e) { msgs.push(String(e && e.message)); }
     }
+    erros[t] = msgs.join(' / ');
   }));
   if (Object.keys(erros).length) console.error('preços', erros);
   return { precos: out, erros };
