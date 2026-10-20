@@ -32,7 +32,13 @@ export async function GET(request) {
     if (u.searchParams.has('exportar')) {
       const { lerEstado } = await import('./_lib.js');
       const { estado } = await lerEstado();
-      return json({ cols: estado.cols });
+      const de = u.searchParams.get('desde');
+      if (!de) return json({ cols: estado.cols });
+      // só o que entra na conta dos investimentos, a partir de uma data (para conferir o cálculo)
+      const c = estado.cols;
+      const corta = (o) => Object.fromEntries(Object.entries(o || {}).filter(([k]) => k >= de));
+      const cotas = Object.fromEntries(Object.entries(c.cotas || {}).map(([k, d]) => [k, Object.assign({}, d, { datas: corta(d.datas) })]));
+      return json({ cols: { config: c.config, checkins: c.checkins, aportes: c.aportes, mercado: c.mercado, mercado_hist: corta(c.mercado_hist), cotas, ajustes: c.ajustes } });
     }
     // ?nova=1&conta=<id>&nome=<nome>&lugar=<onde>&moeda=BRL|USD cria uma conta de investimento
     if (u.searchParams.has('nova')) {
