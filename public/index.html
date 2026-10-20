@@ -335,6 +335,8 @@
   .rent-linha { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .rent-linha b { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; }
   .rent-linha .pct { font-weight: 700; }
+  .rel-botoes { flex-wrap: wrap; }
+  #pat-relatorio-card.destaque { outline: 2px solid var(--invest); outline-offset: 2px; transition: outline-color .4s; }
   .rent-cdi { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-2); border-radius: 8px; padding: 3px 9px; font-size: .85rem; }
   .rent-cdi i, .rent-leg i { width: 9px; height: 9px; border-radius: 50%; background: var(--cdi); display: inline-block; }
   .rent-leg { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
@@ -771,6 +773,16 @@
       <div id="pat-grafico-topo"></div>
       <div class="chart" id="pat-grafico"></div>
       <div id="pat-grafico-det"></div>
+    </div>
+
+    <div class="card" id="pat-relatorio-card">
+      <h3>Relatório em PDF</h3>
+      <p class="hint">Rendimento, gráficos, cada investimento e os gastos do período, num PDF para guardar ou mandar.</p>
+      <div class="actions rel-botoes">
+        <button class="btn-primary" type="button" data-relatorio="7D">Relatório da semana</button>
+        <button class="btn-ghost" type="button" data-relatorio="1M">Relatório do mês</button>
+      </div>
+      <p class="hint" id="rel-status" hidden></p>
     </div>
 
     <div class="card" id="pat-lista-card">
@@ -2739,6 +2751,7 @@
     const hoje = hojeISO();
     const meses = { '1M': 1, '3M': 3, '6M': 6, '12M': 12 }[per];
     let ini = primeiro.data;
+    if (per === '7D') { const d7 = somaDia(hoje, -7); if (d7 > ini) ini = d7; }
     if (meses) {
       const d = new Date(hoje + 'T12:00:00');
       d.setMonth(d.getMonth() - meses);
@@ -2827,6 +2840,77 @@
       '<div class="puxou-l"><span class="row-name">' + esc(x.it.nome) + '<small>' + esc(String(x.it.lugar || '')) + '</small></span>' +
       '<span class="puxou-bar"><i style="width:' + (Math.abs(x.v) / max * 100).toFixed(1) + '%;background:' + (x.v >= 0 ? 'var(--invest)' : 'var(--danger)') + '"></i></span>' +
       '<b class="' + (x.v >= 0 ? 't-invest' : 'neg') + '">' + RS(x.v) + '</b></div>').join('') + '</div>';
+  }
+  /* ---------- relatório em PDF ---------- */
+  function dadosRelatorio(per) {
+    const r = rentabilidade(null, per);
+    if (!r || r.datas.length < 2) return null;
+    const c = contribuicoes(null, per) || { linhas: [], porConta: {} };
+    const hoje = r.datas[r.datas.length - 1], ini = r.datas[0];
+    const eHoje = estimativa(hoje), eIni = estimativa(ini);
+    const total = eHoje ? eHoje.total : 0;
+    const inst = (it) => String(it.lugar || '').split(' · ')[0].trim();
+    const contas = eHoje.itens.filter((it) => it.hoje != null && it.hoje > 0.005).sort((a, b) => b.hoje - a.hoje).map((it) => {
+      const x = c.porConta[it.id];
+      return { nome: it.nome, lugar: it.lugar || inst(it), valor: it.hoje, share: total > 0 ? it.hoje / total : 0, pct: x ? x.pct : null, v: x ? x.v : 0, previa: !!it.cotaPrevia, conta: it.tipo === 'conta' || it.tipo === 'estoque' };
+    });
+    const dias = diasEntre(ini, hoje);
+    const antIni = somaDia(ini, -dias);
+    const gastosEm = (de, ate) => S.movs.filter((m) => m.tipo === 'gasto' && m.data > de && m.data <= ate);
+    const lista = gastosEm(ini, hoje);
+    const porCat = {};
+    lista.forEach((m) => { const k = nomeCat(m.categoria || 'outro'); porCat[k] = (porCat[k] || 0) + (Number(m.valor) || 0); });
+    const doCdi = r.pctCdi > 0.0001 ? r.pct / r.pctCdi * 100 : null;
+    const notas = [
+      'Valores calculados pelo app a partir dos saldos informados e de dados públicos: CDI, IPCA e dólar do Banco Central, cotas dos fundos da CVM e preços de fechamento dos ETFs e ações.',
+      'Rendimento e rentabilidade não contam o dinheiro que você aplicou nem a corretagem.',
+    ];
+    if (contas.some((x) => x.previa)) notas.push('Fundos marcados com "cota em prévia" usam uma estimativa pelo ETF de referência até a CVM divulgar a cota oficial (cerca de 2 dias úteis).');
+    if (r.datas[0] !== somaDia(hoje, per === '7D' ? -7 : 0) && per === '7D') notas.push('O período começa no seu primeiro registro de saldos, em ' + dataBR(ini) + '.');
+    return {
+      titulo: per === '7D' ? 'Relatório da semana' : 'Relatório do mês',
+      de: ini, ate: hoje,
+      geradoEm: new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      kpis: { patrimonio: total, varPatrimonio: total - (eIni ? eIni.total : 0), rendimento: r.ganho, rendPct: r.pct, cdiPct: r.pctCdi, pctDoCdi: doCdi },
+      serie: { datas: r.datas, cart: r.cart, cdi: r.cdi },
+      puxou: c.linhas.map((x) => ({ nome: x.it.nome, v: x.v })),
+      contas,
+      gastos: { total: lista.reduce((a, m) => a + (Number(m.valor) || 0), 0), anterior: gastosEm(antIni, ini).reduce((a, m) => a + (Number(m.valor) || 0), 0), cats: Object.entries(porCat).map(([nome, v]) => ({ nome, v })).sort((a, b) => b.v - a.v) },
+      notas,
+    };
+  }
+  const carregarScript = (src) => new Promise((ok, falha) => {
+    if (document.querySelector('script[data-src="' + src + '"]')) return ok();
+    const el = document.createElement('script');
+    el.src = src; el.dataset.src = src; el.onload = () => ok(); el.onerror = () => falha(new Error('script'));
+    document.head.appendChild(el);
+  });
+  async function gerarRelatorio(per, botao) {
+    const st = $('#rel-status');
+    const d = dadosRelatorio(per);
+    if (!d) { st.textContent = 'Ainda não há dias suficientes para o relatório.'; st.hidden = false; return; }
+    const txt = botao.textContent;
+    botao.disabled = true; botao.textContent = 'Gerando…';
+    try {
+      await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+      await carregarScript('/relatorio.js?v=1');
+      const blob = window.caixaRelatorioPDF(d);
+      const nome = (per === '7D' ? 'relatorio-semana-' : 'relatorio-mes-') + d.ate + '.pdf';
+      const arquivo = new File([blob], nome, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+        try { await navigator.share({ files: [arquivo], title: d.titulo }); st.hidden = true; return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+      st.textContent = 'PDF pronto: ' + nome; st.hidden = false;
+    } catch (e) {
+      console.error(e);
+      st.textContent = 'Não consegui gerar o PDF agora. Confira a internet e tente de novo.'; st.hidden = false;
+    } finally {
+      botao.disabled = false; botao.textContent = txt;
+    }
   }
   const mesCurto = (iso) => { const [y, m] = iso.split('-'); return ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][Number(m) - 1] + '/' + y.slice(2); };
   const pctTxt = (v) => (v >= 0 ? '' : '−') + num2.format(Math.abs(v)) + '%';
@@ -3593,6 +3677,10 @@
 
   function render() {
     S.geracao = (S.geracao || 0) + 1;
+    if (S.mostrarRelatorio && S.loaded.check && S.checkins.length) {
+      S.mostrarRelatorio = false;
+      setTimeout(() => { const c = $('#pat-relatorio-card'); if (c) { rolar(c); c.classList.add('destaque'); setTimeout(() => c.classList.remove('destaque'), 2500); } toast('Toque em "Relatório da semana" para baixar o PDF.'); }, 600);
+    }
     agendarFotos();
     renderMes();
     renderMim();
@@ -3719,6 +3807,10 @@
 
   $('#dist-valor').addEventListener('input', () => { S.distTocado = true; });
   $('#dist-salvar').addEventListener('click', salvarDistribuir);
+  $('#pat-relatorio-card').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-relatorio]');
+    if (b) gerarRelatorio(b.dataset.relatorio, b);
+  });
   $('#pat-grafico-per').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-per]');
     if (!b) return;
@@ -3822,7 +3914,9 @@
   let abaSalva = null;
   try { abaSalva = localStorage.getItem('caixa-aba'); } catch (e) { abaSalva = null; }
   try {
-    const abaUrl = new URLSearchParams(location.search).get('aba');
+    const qs = new URLSearchParams(location.search);
+    const abaUrl = qs.get('aba');
+    if (qs.get('relatorio')) S.mostrarRelatorio = true;
     if (abaUrl) { abaSalva = abaUrl; history.replaceState(null, '', location.pathname); }
   } catch (e) { /* segue com a aba salva */ }
   abrirAba(['mes', 'mim', 'patrimonio', 'ajustes'].includes(abaSalva) ? abaSalva : 'mes');

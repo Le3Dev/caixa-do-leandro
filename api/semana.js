@@ -44,7 +44,8 @@ export function montarResumo(cols, hoje) {
   } else {
     partes.push('Nenhum gasto lançado na semana.');
   }
-  return { title: titulo, body: partes.join(' '), tag: 'semana-' + hoje, url: '/?aba=patrimonio' };
+  partes.push('Toque para baixar o relatório em PDF.');
+  return { title: titulo, body: partes.join(' '), tag: 'semana-' + hoje, url: '/?aba=patrimonio&relatorio=semana' };
 }
 
 export async function GET(request) {
