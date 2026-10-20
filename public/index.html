@@ -300,6 +300,10 @@
   .leg-val { text-align: right; white-space: nowrap; }
   .leg-val b { font-weight: 600; }
   .leg-val small { display: block; color: var(--muted); font-size: .78rem; }
+  .leg-val small.leg-var { font-size: .82rem; font-weight: 600; }
+  .leg-val small.leg-var.t-invest { color: var(--invest); }
+  .leg-val small.leg-var.neg { color: var(--danger); }
+  .leg-nota { margin: 4px 0 2px; font-size: .78rem; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chips .pill { min-width: 2.75rem; }
   .seg.wrap { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1674,8 +1678,20 @@
     return best ? { data: best, v: Number(d[best]), previa: !!(ult != null && best > ult) } : cotaEm(cnpj, iso);
   }
   // ref: o dia da cota/preço a que o valor do check-in corresponde (quando o app sabe exatamente)
+  function menosDiasUteis(iso, n) {
+    const d = new Date(iso + 'T12:00:00');
+    while (n > 0) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0 && d.getDay() !== 6) n--; }
+    return isoDe(d);
+  }
+  // Fundo: a XP mostra a cota oficial de 2 dias úteis antes (a mesma que a CVM já divulgou).
+  // ETF/ação: o preço de fechamento do dia útil anterior.
+  function cotaDoCheckin(chave, dia) {
+    const fundo = !!(S.cotas[chave] && S.cotas[chave].cnpj);
+    if (!fundo) return cotaAntes(chave, dia);
+    return cotaEm(chave, menosDiasUteis(dia, 2), true) || cotaEm(chave, dia, true);
+  }
   function fatorCota(cnpj, de, ate, doCheckin, ref) {
-    const a = ref ? cotaEm(cnpj, ref) : doCheckin ? cotaAntes(cnpj, de) : cotaEm(cnpj, de), b = cotaEm(cnpj, ate);
+    const a = ref ? cotaEm(cnpj, ref) : doCheckin ? cotaDoCheckin(cnpj, de) : cotaEm(cnpj, de), b = cotaEm(cnpj, ate);
     return a && b && a.v > 0 ? b.v / a.v : 1;
   }
   function dolarPara(ck, iso) {
@@ -2404,6 +2420,7 @@
         (rt ? '<div><span class="hint">Rendeu desde ' + dataCurta(ck0.data) + '</span><b class="' + (ganho >= 0 ? 't-invest' : 'neg') + '">' + RS(ganho) +
           ' <small>(' + (rt.pct >= 0 ? '+' : '') + num1.format(rt.pct) + '%)</small></b></div>' : '') + '</div>';
     }
+    const varia = S.checkins.length ? contribuicoes(null, 'tudo') : null;
     const r = 62, C = 2 * Math.PI * r, gap = itens.length > 1 ? 2 : 0;
     let acc = 0;
     const arcos = itens.map((it) => {
@@ -2421,10 +2438,15 @@
           '<text class="c-lbl" x="84" y="78" text-anchor="middle">' + (filtro ? esc(filtro) : 'investido') + '</text>' +
           '<text class="c-total" x="84" y="98" text-anchor="middle">' + esc(filtro ? 'R$ ' + compact.format(totalF) : pct1.format(1 - parado)) + '</text>' +
         '</svg>' +
-        '<div class="legend">' + itens.map((it) =>
-          '<div class="leg"><span class="sw" style="background:' + it.cor + '"></span>' +
-          '<span class="leg-name">' + esc(it.nome) + '<small>' + esc(it.lugar) + (it.tipo === 'conta' ? ' · parado' : it.renda ? ' · ' + esc(it.renda.rotulo) : '') + '</small></span>' +
-          '<span class="leg-val"><b>' + esc(pct1.format(it.share)) + '</b><small>' + R(it.hoje) + '</small></span></div>').join('') +
+        '<div class="legend">' + (varia ? '<p class="hint leg-nota">▲▼ quanto cada um subiu ou caiu desde ' + dataCurta(varia.desde) + ', sem contar o que você aplicou</p>' : '') + itens.map((it) => {
+          const vx = varia && varia.porConta[it.id];
+          const seta = it.tipo === 'conta' || it.tipo === 'estoque' || !varia ? '' : !vx || vx.pct == null || Math.abs(vx.pct) < 0.005
+            ? '<small class="leg-var">0,00%</small>'
+            : '<small class="leg-var ' + (vx.pct >= 0 ? 't-invest' : 'neg') + '">' + (vx.pct >= 0 ? '▲ ' : '▼ ') + num2.format(Math.abs(vx.pct)) + '%</small>';
+          return '<div class="leg"><span class="sw" style="background:' + it.cor + '"></span>' +
+            '<span class="leg-name">' + esc(it.nome) + '<small>' + esc(it.lugar) + (it.tipo === 'conta' ? ' · parado' : it.renda ? ' · ' + esc(it.renda.rotulo) : '') + ' · ' + esc(pct1.format(it.share)) + '</small></span>' +
+            '<span class="leg-val"><b>' + R(it.hoje) + '</b>' + seta + '</span></div>';
+        }).join('') +
         '</div>' +
       '</div>';
   }
@@ -2685,7 +2707,14 @@
     });
     return { brl, usd };
   }
-  function rentabilidade(filtro, per) {
+  const memo = {};
+  function lembrar(nome, args, fn) {
+    const k = nome + '|' + (S.geracao || 0) + '|' + hojeISO() + '|' + JSON.stringify(args);
+    if (!(k in memo)) { Object.keys(memo).forEach((x) => { if (!x.startsWith(nome + '|' + (S.geracao || 0) + '|')) delete memo[x]; }); memo[k] = fn(); }
+    return memo[k];
+  }
+  function rentabilidade(filtro, per) { return lembrar('rent', [filtro, per], () => rentabilidadeCalc(filtro, per)); }
+  function rentabilidadeCalc(filtro, per) {
     const primeiro = S.checkins[0];
     if (!primeiro) return null;
     const hoje = hojeISO();
@@ -2728,7 +2757,8 @@
   /* Quanto cada investimento ganhou ou perdeu no período. Nos dias de check-in, a diferença entre o que o app
      estimava e o valor anotado entra no próprio investimento; nas contas em dólar ela fica numa linha à parte,
      porque ali costuma ser dinheiro trocando de lugar (ex.: dólar virando ETF) e a corretagem. */
-  function contribuicoes(filtro, per) {
+  function contribuicoes(filtro, per) { return lembrar('contrib', [filtro, per], () => contribuicoesCalc(filtro, per)); }
+  function contribuicoesCalc(filtro, per) {
     const r = rentabilidade(filtro, per);
     if (!r || r.datas.length < 2) return null;
     const inst = (it) => String(it.lugar || '').split(' · ')[0].trim();
@@ -2736,11 +2766,11 @@
     const mapa = (e) => { const m = {}; if (e) e.itens.filter(entra).forEach((it) => { m[it.id] = it; }); return m; };
     const ap = {};
     S.aportes.forEach((a) => { const k = a.data + '|' + a.contaId; ap[k] = (ap[k] || 0) + (Number(a.valor) || 0); });
-    const tot = {}, info = {};
+    const tot = {}, info = {}, base = {};
     let acertoUSD = 0;
     const soma = (id, v, it) => { tot[id] = (tot[id] || 0) + v; if (it) info[id] = it; };
     let ant = mapa(estimativa(r.datas[0]));
-    Object.values(ant).forEach((it) => { info[it.id] = it; });
+    Object.values(ant).forEach((it) => { info[it.id] = it; base[it.id] = it.hoje; });
     for (let i = 1; i < r.datas.length; i++) {
       const d = r.datas[i];
       const ck0 = checkinAte(r.datas[i - 1]), ck1 = checkinAte(d);
@@ -2751,15 +2781,16 @@
         const a0 = ant[id] ? ant[id].hoje : 0, m = modelo[id] ? modelo[id].hoje : 0, a1 = agora[id] ? agora[id].hoje : 0;
         const it = agora[id] || modelo[id] || ant[id];
         soma(id, m - a0 - (ap[d + '|' + id] || 0), it);
-        if (it.moeda === 'USD') acertoUSD += a1 - m; else soma(id, a1 - m, it);
+        base[id] = (base[id] || 0) + (ap[d + '|' + id] || 0);
+        if (it.moeda === 'USD') { acertoUSD += a1 - m; if (a1 - m > 0) base[id] += a1 - m; } else soma(id, a1 - m, it);
       });
       acertoUSD += custosEm(d, filtro).usd; // a corretagem não é perda de mercado
       ant = agora;
     }
-    const linhas = Object.entries(tot).map(([id, v]) => ({ id, v, it: info[id] })).filter((x) => x.it && Math.abs(x.v) >= 0.005);
+    const linhas = Object.entries(tot).map(([id, v]) => ({ id, v, it: info[id], pct: base[id] > 0.5 ? v / base[id] * 100 : null })).filter((x) => x.it && Math.abs(x.v) >= 0.005);
     if (Math.abs(acertoUSD) >= 0.05) linhas.push({ id: '_acerto_usd', v: acertoUSD, it: { nome: 'Acertos em dólar', lugar: 'Ao atualizar os saldos em dólar' } });
     linhas.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
-    return { linhas, total: r.ganho };
+    return { linhas, total: r.ganho, porConta: Object.fromEntries(linhas.map((x) => [x.id, x])), desde: r.datas[0] };
   }
   function renderPuxou(filtro, per) {
     const c = contribuicoes(filtro, per);
@@ -3534,6 +3565,7 @@
   }
 
   function render() {
+    S.geracao = (S.geracao || 0) + 1;
     agendarFotos();
     renderMes();
     renderMim();

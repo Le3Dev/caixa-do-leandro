@@ -93,6 +93,24 @@ export async function GET(request) {
       const doc = c && c.cnpj && estado.cols.cotas[c.cnpj];
       return json({ ok: true, conta, proxy, beta, ultimaOficial: doc && Object.keys(doc.datas).sort().slice(-2).map((k) => [k, doc.datas[k]]), previa: doc && doc.previa });
     }
+    // ?checkin=AAAA-MM-DD&conta=<id>[&valor=<valor>][&ref=AAAA-MM-DD|-] corrige um item de um check-in que já existe
+    if (u.searchParams.has('checkin')) {
+      const data = u.searchParams.get('checkin') || '';
+      const ref = u.searchParams.get('ref');
+      const valor = u.searchParams.has('valor') ? Number(u.searchParams.get('valor')) : null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || (valor != null && !(valor >= 0)) || (ref && ref !== '-' && !/^\d{4}-\d{2}-\d{2}$/.test(ref))) throw new ErroPedido('Pedido inválido.');
+      let item = null;
+      await alterar((e) => {
+        const ck = e.cols.checkins && e.cols.checkins[data];
+        const it = ck && (ck.itens || []).find((x) => x.id === conta);
+        if (!it) return;
+        if (valor != null) it.valor = Math.round(valor * 10000) / 10000;
+        if (ref === '-') delete it.cotaRef; else if (ref) it.cotaRef = ref;
+        item = Object.assign({}, it);
+      });
+      if (!item) throw new ErroPedido('Check-in ou conta não encontrados.', 404);
+      return json({ ok: true, data, item });
+    }
     // ?custo=<valor>&moeda=USD|BRL&data=AAAA-MM-DD[&inst=XP][&desc=Corretagem] anota um custo (ex.: corretagem)
     // no check-in daquele dia: sai da carteira como retirada e não conta como perda de rendimento. custo=0 tira.
     if (u.searchParams.has('custo')) {
