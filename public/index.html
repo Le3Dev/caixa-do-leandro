@@ -1831,9 +1831,9 @@
             const item = { id: c.id, nome: c.nome, lugar: c.lugar, tipo: c.tipo, moeda: c.moeda, valor: v == null ? null : c.moeda === 'USD' ? Math.round(v * 10000) / 10000 : r2(v) };
             // fundos e ETFs: guarda de que dia é a cota/preço por trás do valor, para não contar a variação duas vezes
             const k = c.cnpj || c.ticker;
-            if (v != null && k && temCota(k)) {
+            if (v != null && k) {
               if (c.id in acertos) { if (refs[c.id]) item.cotaRef = refs[c.id]; }
-              else { const q = cotaEm(k, aj.data); if (q) item.cotaRef = q.data; }
+              else if (temCota(k)) { const q = cotaEm(k, aj.data); if (q) item.cotaRef = q.data; }
             }
             return item;
           });
