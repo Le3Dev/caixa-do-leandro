@@ -67,6 +67,26 @@ export async function GET(request) {
       if (!achou) throw new ErroPedido('Conta não encontrada.', 404);
       return json({ ok: true, conta, ticker, cotas: await atualizarCotas() });
     }
+    // ?conta=<id>&proxy=<ETF>[&beta=1] dá ao fundo um ETF de referência para a prévia da cota (vazio tira)
+    if (u.searchParams.has('proxy')) {
+      const proxy = (u.searchParams.get('proxy') || '').trim().toUpperCase();
+      if (proxy && !tickerOk(proxy)) throw new ErroPedido('Código inválido.');
+      const beta = Number(u.searchParams.get('beta')) || 1;
+      let achou = false;
+      await alterar((e) => {
+        const c = ((e.cols.config && e.cols.config.main && e.cols.config.main.contas) || []).find((x) => x.id === conta);
+        if (!c) return;
+        achou = true;
+        if (proxy) { c.proxy = proxy; c.proxyBeta = beta; } else { delete c.proxy; delete c.proxyBeta; }
+      });
+      if (!achou) throw new ErroPedido('Conta não encontrada.', 404);
+      await atualizarCotas();
+      const { lerEstado } = await import('./_lib.js');
+      const { estado } = await lerEstado();
+      const c = ((estado.cols.config.main.contas) || []).find((x) => x.id === conta);
+      const doc = c && c.cnpj && estado.cols.cotas[c.cnpj];
+      return json({ ok: true, conta, proxy, beta, ultimaOficial: doc && Object.keys(doc.datas).sort().slice(-2).map((k) => [k, doc.datas[k]]), previa: doc && doc.previa });
+    }
     // ?conta=<id>&lugar=<texto> muda onde a conta fica (ex.: "XP · conta em dólar")
     if (u.searchParams.has('lugar')) {
       const lugar = (u.searchParams.get('lugar') || '').trim().slice(0, 60);

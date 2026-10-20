@@ -8,7 +8,9 @@ export async function atualizarCotas() {
   const { estado } = await lerEstado();
   const contas = (estado.cols.config && estado.cols.config.main && estado.cols.config.main.contas) || [];
   const cnpjs = contas.map((c) => c.cnpj).filter(Boolean);
-  const tickers = contas.map((c) => c.ticker).filter(Boolean);
+  // fundos com ETF de referência (proxy): a prévia da cota anda com ele até a cota oficial sair
+  const proxies = contas.filter((c) => c.cnpj && c.proxy).map((c) => c.proxy);
+  const tickers = [...new Set([...contas.map((c) => c.ticker).filter(Boolean), ...proxies])];
   if (!cnpjs.length && !tickers.length) return {};
   const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   const [fundos, bolsa] = await Promise.all([
@@ -26,6 +28,25 @@ export async function atualizarCotas() {
       const ks = Object.keys(doc.datas).sort();
       ks.slice(0, Math.max(0, ks.length - 120)).forEach((k) => delete doc.datas[k]);
       doc.atualizadoEm = new Date().toISOString();
+    }
+    // prévia: depois da última cota oficial, a cota anda com o ETF de referência (calibrado: beta ~1, sem câmbio)
+    for (const c of contas) {
+      if (!c.cnpj || !c.proxy) continue;
+      const doc = e.cols.cotas[c.cnpj];
+      const px = e.cols.cotas[c.proxy] && e.cols.cotas[c.proxy].datas;
+      if (!doc || !px) { if (doc) delete doc.previa; continue; }
+      const ks = Object.keys(doc.datas).sort();
+      const ult = ks[ks.length - 1];
+      const pk = Object.keys(px).sort();
+      const base = pk.filter((k) => k <= ult).pop();
+      const beta = Number(c.proxyBeta) || 1;
+      const previa = {};
+      if (ult && base) {
+        pk.filter((k) => k > ult && k <= hoje).forEach((k) => {
+          previa[k] = Math.round(doc.datas[ult] * (1 + beta * (px[k] / px[base] - 1)) * 1e8) / 1e8;
+        });
+      }
+      if (Object.keys(previa).length) { doc.previa = previa; doc.previaDe = c.proxy; } else { delete doc.previa; delete doc.previaDe; }
     }
   });
   const resumo = Object.fromEntries(Object.entries(novas).map(([c, d]) => { const ks = Object.keys(d).sort(); return [c, { dias: ks.length, ultima: ks[ks.length - 1], cota: d[ks[ks.length - 1]] }]; }));

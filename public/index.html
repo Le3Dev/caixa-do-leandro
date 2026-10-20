@@ -340,6 +340,12 @@
   .rent-det { margin-top: 12px; border-top: 1px solid var(--line); }
   .rent-det > div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .92rem; }
   .rent-det span { color: var(--muted); flex: none; }
+  .puxou { display: flex; flex-direction: column; gap: 10px; }
+  .puxou-l { display: grid; grid-template-columns: minmax(0, 1fr) 3.5rem auto; align-items: center; gap: 10px; font-size: .9rem; }
+  .puxou-l .row-name small { display: block; color: var(--muted); font-size: .76rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .puxou-l b { white-space: nowrap; font-weight: 700; text-align: right; min-width: 5.5rem; }
+  .puxou-bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+  .puxou-bar i { display: block; height: 100%; border-radius: 3px; }
   .rent-det b { text-align: right; }
   .evo-topo { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .evo-topo span { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; }
@@ -1643,19 +1649,29 @@
   }
   /* Cotas de fundos (CVM), guardadas pelo servidor. */
   const temCota = (cnpj) => !!(S.cotas[cnpj] && Object.keys(S.cotas[cnpj].datas || {}).length);
-  function cotaEm(cnpj, iso) {
-    const d = (S.cotas[cnpj] && S.cotas[cnpj].datas) || {};
+  /* Cotas oficiais e, depois da última oficial, a prévia (estimada pelo ETF de referência, até a CVM divulgar). */
+  function datasCota(cnpj, soOficial) {
+    const doc = S.cotas[cnpj] || {};
+    const d = doc.datas || {};
+    if (soOficial || !doc.previa) return { d, ult: null };
+    const ult = Object.keys(d).sort().pop() || '';
+    const m = Object.assign({}, d);
+    Object.entries(doc.previa).forEach(([k, v]) => { if (k > ult) m[k] = v; });
+    return { d: m, ult };
+  }
+  function cotaEm(cnpj, iso, soOficial) {
+    const { d, ult } = datasCota(cnpj, soOficial);
     let best = null;
     Object.keys(d).forEach((k) => { if (k <= iso && (!best || k > best)) best = k; });
-    return best ? { data: best, v: Number(d[best]) } : null;
+    return best ? { data: best, v: Number(d[best]), previa: !!(ult != null && best > ult) } : null;
   }
-  /* A corretora mostra o fundo com a cota do dia útil anterior: o valor anotado num check-in do dia D
-     corresponde à última cota antes de D. Assim a cota que chega depois não é contada duas vezes. */
+  // A corretora mostra o fundo com a cota do dia útil anterior: o valor anotado num check-in do dia D
+  // corresponde à última cota antes de D. Assim a cota que chega depois não é contada duas vezes.
   function cotaAntes(cnpj, iso) {
-    const d = (S.cotas[cnpj] && S.cotas[cnpj].datas) || {};
+    const { d, ult } = datasCota(cnpj);
     let best = null;
     Object.keys(d).forEach((k) => { if (k < iso && (!best || k > best)) best = k; });
-    return best ? { data: best, v: Number(d[best]) } : cotaEm(cnpj, iso);
+    return best ? { data: best, v: Number(d[best]), previa: !!(ult != null && best > ult) } : cotaEm(cnpj, iso);
   }
   // ref: o dia da cota/preço a que o valor do check-in corresponde (quando o app sabe exatamente)
   function fatorCota(cnpj, de, ate, doCheckin, ref) {
@@ -1681,8 +1697,8 @@
   }
   /* Patrimônio numa data: o último check-in, mais o rendimento de cada dia útil, o dólar do dia
      e tudo o que você lançou depois dele (salário, aplicações, gastos e revendas). */
-  function estimativa(iso) {
-    const ck = checkinAte(iso);
+  function estimativa(iso, ckForcado) {
+    const ck = ckForcado || checkinAte(iso);
     if (!ck) return null;
     const du = diasUteis(ck.data, iso);
     const dol = dolarPara(ck, iso);
@@ -1724,7 +1740,9 @@
       } else if (it.cnpj && temCota(it.cnpj)) {
         // fundo: anda junto com a cota do dia divulgada na CVM
         it.hoje = v * fatorCota(it.cnpj, ck.data, iso, true, orig.cotaRef);
-        it.cotaData = cotaEm(it.cnpj, iso).data;
+        const qd = cotaEm(it.cnpj, iso);
+        it.cotaData = qd.data;
+        it.cotaPrevia = qd.previa;
         ganhoRenda += it.hoje - v;
       } else if (it.renda && du > 0) {
         it.hoje = cresce(v, it.renda, ck.data);
@@ -1833,7 +1851,14 @@
             const k = c.cnpj || c.ticker;
             if (v != null && k) {
               if (c.id in acertos) { if (refs[c.id]) item.cotaRef = refs[c.id]; }
-              else if (temCota(k)) { const q = cotaEm(k, aj.data); if (q) item.cotaRef = q.data; }
+              else if (temCota(k)) {
+                // se o valor de hoje usa a prévia, guarda o valor na última cota oficial (a prévia depois é trocada pela real)
+                const q = cotaEm(k, aj.data), qo = cotaEm(k, aj.data, true);
+                if (q && q.previa && qo && q.v > 0) {
+                  item.valor = c.moeda === 'USD' ? Math.round(v * qo.v / q.v * 10000) / 10000 : r2(v * qo.v / q.v);
+                  item.cotaRef = qo.data;
+                } else if (q) item.cotaRef = q.data;
+              }
             }
             return item;
           });
@@ -2623,7 +2648,7 @@
       if (it.hoje == null) return '<div class="row"><span class="row-name">' + esc(it.nome) + '<small>' + esc(it.lugar) + '</small></span><span class="row-val none">sem valor</span></div>';
       let sub = esc(it.lugar);
       if (it.renda) sub += ' · ' + esc(it.renda.rotulo);
-      if (it.cotaData) sub += (it.ticker ? ' · ' + esc(it.ticker) + ' · preço de ' : ' · cota de ') + dataCurta(it.cotaData);
+      if (it.cotaData) sub += (it.ticker ? ' · ' + esc(it.ticker) + ' · preço de ' : ' · cota de ') + dataCurta(it.cotaData) + (it.cotaPrevia ? ' (prévia)' : '');
       let extra = '';
       if (it.moeda === 'USD') extra = '<small>US$ ' + num2.format(it.usd != null ? it.usd : it.valor) + '</small>';
       else if (Math.abs(it.hoje - Number(it.valor)) >= 0.005) extra = '<small>' + RS(it.hoje - Number(it.valor)) + ' desde o check-in</small>';
@@ -2682,6 +2707,50 @@
     }
     return { datas, cart, cdi, acum, ganho, pct: (fC - 1) * 100, pctCdi: (fD - 1) * 100, total: ant };
   }
+  /* Quanto cada investimento ganhou ou perdeu no período. Nos dias de check-in, a diferença entre o que o app
+     estimava e o valor anotado entra no próprio investimento; nas contas em dólar ela fica numa linha à parte,
+     porque ali costuma ser dinheiro trocando de lugar (ex.: dólar virando ETF) e a corretagem. */
+  function contribuicoes(filtro, per) {
+    const r = rentabilidade(filtro, per);
+    if (!r || r.datas.length < 2) return null;
+    const inst = (it) => String(it.lugar || '').split(' · ')[0].trim();
+    const entra = (it) => it.hoje != null && it.tipo !== 'estoque' && (it.moeda === 'USD' || it.tipo !== 'conta') && (!filtro || inst(it) === filtro);
+    const mapa = (e) => { const m = {}; if (e) e.itens.filter(entra).forEach((it) => { m[it.id] = it; }); return m; };
+    const ap = {};
+    S.aportes.forEach((a) => { const k = a.data + '|' + a.contaId; ap[k] = (ap[k] || 0) + (Number(a.valor) || 0); });
+    const tot = {}, info = {};
+    let acertoUSD = 0;
+    const soma = (id, v, it) => { tot[id] = (tot[id] || 0) + v; if (it) info[id] = it; };
+    let ant = mapa(estimativa(r.datas[0]));
+    Object.values(ant).forEach((it) => { info[it.id] = it; });
+    for (let i = 1; i < r.datas.length; i++) {
+      const d = r.datas[i];
+      const ck0 = checkinAte(r.datas[i - 1]), ck1 = checkinAte(d);
+      const agora = mapa(estimativa(d));
+      const modelo = ck0 && ck1 && ck0.data !== ck1.data ? mapa(estimativa(d, ck0)) : agora;
+      const ids = new Set([...Object.keys(ant), ...Object.keys(agora), ...Object.keys(modelo)]);
+      ids.forEach((id) => {
+        const a0 = ant[id] ? ant[id].hoje : 0, m = modelo[id] ? modelo[id].hoje : 0, a1 = agora[id] ? agora[id].hoje : 0;
+        const it = agora[id] || modelo[id] || ant[id];
+        soma(id, m - a0 - (ap[d + '|' + id] || 0), it);
+        if (it.moeda === 'USD') acertoUSD += a1 - m; else soma(id, a1 - m, it);
+      });
+      ant = agora;
+    }
+    const linhas = Object.entries(tot).map(([id, v]) => ({ id, v, it: info[id] })).filter((x) => x.it && Math.abs(x.v) >= 0.005);
+    if (Math.abs(acertoUSD) >= 0.005) linhas.push({ id: '_acerto_usd', v: acertoUSD, it: { nome: 'Acertos no exterior', lugar: 'Diferença ao atualizar os saldos em dólar (ex.: corretagem)' } });
+    linhas.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+    return { linhas, total: r.ganho };
+  }
+  function renderPuxou(filtro, per) {
+    const c = contribuicoes(filtro, per);
+    if (!c || !c.linhas.length) return '';
+    const max = Math.max(...c.linhas.map((x) => Math.abs(x.v)), 0.01);
+    return '<h4 class="rv-sec">O que puxou o resultado</h4><div class="puxou">' + c.linhas.map((x) =>
+      '<div class="puxou-l"><span class="row-name">' + esc(x.it.nome) + '<small>' + esc(String(x.it.lugar || '')) + '</small></span>' +
+      '<span class="puxou-bar"><i style="width:' + (Math.abs(x.v) / max * 100).toFixed(1) + '%;background:' + (x.v >= 0 ? 'var(--invest)' : 'var(--danger)') + '"></i></span>' +
+      '<b class="' + (x.v >= 0 ? 't-invest' : 'neg') + '">' + RS(x.v) + '</b></div>').join('') + '</div>';
+  }
   const mesCurto = (iso) => { const [y, m] = iso.split('-'); return ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'][Number(m) - 1] + '/' + y.slice(2); };
   const pctTxt = (v) => (v >= 0 ? '' : '−') + num2.format(Math.abs(v)) + '%';
   function grafico() {
@@ -2729,7 +2798,7 @@
       '<div><span><i></i>CDI</span>' + seta(r.pctCdi) + '</div></div>' +
       '<div class="rent-det"><div><span>Rendimento</span><b class="' + (r.ganho >= 0 ? 't-invest' : 'neg') + '">' + RS(r.ganho) + '</b></div>' +
       '<div><span>Investido hoje</span><b>' + R(r.total) + '</b></div>' +
-      '<div><span>Data de referência</span><b>' + dataBR(ini) + ' a ' + dataBR(fim) + '</b></div></div>';
+      '<div><span>Data de referência</span><b>' + dataBR(ini) + ' a ' + dataBR(fim) + '</b></div></div>' + renderPuxou(filtro, per);
   }
 
   function abrirCheckin() {
