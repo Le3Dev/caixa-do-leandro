@@ -16,6 +16,24 @@ async function cnbc(ticker) {
     const v = Number(b.close);
     if (/^\d{8}/.test(t) && v > 0) datas[t.slice(0, 4) + '-' + t.slice(4, 6) + '-' + t.slice(6, 8)] = Math.round(v * 10000) / 10000;
   });
+  // o gráfico diário só ganha a barra do dia no dia seguinte: o último preço vem da cotação
+  try {
+    const q = await fetch('https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=' + encodeURIComponent(ticker) + '&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=0&output=json', { headers: { 'user-agent': UA, accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+    if (q.ok) {
+      const fq = (((await q.json()) || {}).FormattedQuoteResult || {}).FormattedQuote || [];
+      const c = fq[0] || {};
+      const v = Number(String(c.last || '').replace(/,/g, ''));
+      let dia = null;
+      const iso = String(c.last_time || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) dia = iso[1] + '-' + iso[2] + '-' + iso[3];
+      else {
+        const md = String(c.last_timedate || '').match(/^(\d{2})\/(\d{2})\/(\d{2})\b/);
+        if (md) dia = '20' + md[3] + '-' + md[1] + '-' + md[2];
+      }
+      const ult = Object.keys(datas).sort().pop();
+      if (v > 0 && dia && (!ult || dia >= ult)) datas[dia] = Math.round(v * 10000) / 10000;
+    }
+  } catch (e) { /* fica só com o gráfico */ }
   const ks = Object.keys(datas).sort();
   if (!ks.length) throw new Error('CNBC ' + ticker + ': sem preços');
   ks.slice(0, Math.max(0, ks.length - 90)).forEach((k) => delete datas[k]);
