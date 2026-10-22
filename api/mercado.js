@@ -31,8 +31,10 @@ export async function atualizarCotas() {
     }
     // prévia: depois da última cota oficial, a cota anda com o ETF de referência (calibrado: beta ~1, sem câmbio)
     for (const c of contas) {
-      if (!c.cnpj || !c.proxy) continue;
+      if (!c.cnpj) continue;
       const doc = e.cols.cotas[c.cnpj];
+      // sem ETF de referência: só a cota oficial (igual à XP)
+      if (!c.proxy) { if (doc) { delete doc.previa; delete doc.previaDe; } continue; }
       const px = e.cols.cotas[c.proxy] && e.cols.cotas[c.proxy].datas;
       if (!doc || !px) { if (doc) delete doc.previa; continue; }
       const ks = Object.keys(doc.datas).sort();
