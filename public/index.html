@@ -2822,7 +2822,8 @@
       });
       acertoUSD += custosEm(d, filtro).usd; // a corretagem não é perda de mercado
       fluxosEm(d, filtro).forEach((f) => {
-        base[f.conta] = (base[f.conta] || 0) + Math.max(0, f.brl);
+        // conta nova já entrou na base pelo valor do check-in; numa conta antiga, a entrada soma na base
+        if (ant[f.conta]) base[f.conta] = (base[f.conta] || 0) + Math.max(0, f.brl);
         if (f.usd) acertoUSD -= f.brl; else soma(f.conta, -f.brl);
       });
       ant = agora;
