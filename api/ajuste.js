@@ -40,6 +40,16 @@ export async function GET(request) {
       const cotas = Object.fromEntries(Object.entries(c.cotas || {}).map(([k, d]) => [k, Object.assign({}, d, { datas: corta(d.datas) })]));
       return json({ cols: { config: c.config, checkins: c.checkins, aportes: c.aportes, mercado: c.mercado, mercado_hist: corta(c.mercado_hist), cotas, ajustes: c.ajustes } });
     }
+    // ?reserva=<valor> muda a meta da reserva de emergência
+    if (u.searchParams.has('reserva')) {
+      const v = Number(u.searchParams.get('reserva'));
+      if (!(v > 0)) throw new ErroPedido('Valor inválido.');
+      await alterar((e) => {
+        const cfg = e.cols.config && e.cols.config.main;
+        if (cfg) cfg.reserva = Object.assign({}, cfg.reserva, { valor: Math.round(v * 100) / 100 });
+      });
+      return json({ ok: true, reserva: v });
+    }
     // ?nova=1&conta=<id>&nome=<nome>&lugar=<onde>&moeda=BRL|USD cria uma conta de investimento
     if (u.searchParams.has('nova')) {
       if (!/^[a-z0-9_\-]{2,40}$/.test(conta)) throw new ErroPedido('Id inválido.');
