@@ -139,10 +139,10 @@
   .brand { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
   .brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 1.55rem; letter-spacing: -0.015em; text-wrap: balance; }
   .brand small { color: var(--muted); font-size: .8rem; }
-  .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 2px; }
+  .tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); background: var(--surface-2); border-radius: 999px; padding: 4px; gap: 2px; }
   .tab {
     appearance: none; border: 0; background: transparent; color: var(--muted);
-    font-weight: 600; font-size: .84rem; padding: 9px 2px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    font-weight: 600; font-size: clamp(.7rem, 3.2vw, .84rem); padding: 9px 1px; border-radius: 999px; cursor: pointer; white-space: nowrap; letter-spacing: -.01em;
   }
   .tab[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .1); }
 
@@ -506,6 +506,7 @@
       <button class="tab" role="tab" id="tab-mes" data-tab="mes" aria-controls="aba-mes" aria-selected="true">Mês</button>
       <button class="tab" role="tab" id="tab-mim" data-tab="mim" aria-controls="aba-mim" aria-selected="false">Para mim</button>
       <button class="tab" role="tab" id="tab-patrimonio" data-tab="patrimonio" aria-controls="aba-patrimonio" aria-selected="false">Patrimônio<span class="tab-dot" id="tab-dot" hidden></span></button>
+      <button class="tab" role="tab" id="tab-projetos" data-tab="projetos" aria-controls="aba-projetos" aria-selected="false">Projetos</button>
       <button class="tab" role="tab" id="tab-ajustes" data-tab="ajustes" aria-controls="aba-ajustes" aria-selected="false">Ajustes</button>
     </nav>
   </header>
@@ -671,19 +672,6 @@
       <div class="panel" id="mim-gastos"></div>
     </div>
 
-    <div class="card" id="mim-proj-card">
-      <div class="saldo-top"><h3>Projetos</h3><button class="link" type="button" data-pj="novo">+ Novo projeto</button></div>
-      <div id="mim-proj-form" hidden>
-        <div class="grid2">
-          <label class="field" for="pj-nome">Nome do projeto<span class="input"><input id="pj-nome" type="text" autocomplete="off" placeholder="ex.: meu SaaS"></span></label>
-          <label class="field" for="pj-data">Criado em<span class="input"><input id="pj-data" type="date"></span></label>
-        </div>
-        <p class="err" id="pj-erro" hidden></p>
-        <div class="actions"><button class="btn-primary" type="button" data-pj="salvar">Criar projeto</button><button class="btn-ghost" type="button" data-pj="cancelar">Cancelar</button></div>
-      </div>
-      <div id="mim-proj"></div>
-    </div>
-
     <div class="card" id="mim-painel-card" hidden>
       <h3>Painel da revenda</h3>
       <div id="mim-painel"></div>
@@ -821,6 +809,23 @@
       <h3>Tudo junto</h3>
       <div class="panel" id="pat-tudo"></div>
     </div>
+  </section>
+
+  <!-- Projetos -->
+  <section class="panel" id="aba-projetos" role="tabpanel" aria-labelledby="tab-projetos" hidden>
+    <div class="card" id="mim-proj-card">
+      <div class="saldo-top"><h3>Projetos</h3><button class="link" type="button" data-pj="novo">+ Novo projeto</button></div>
+      <div id="mim-proj-form" hidden>
+        <div class="grid2">
+          <label class="field" for="pj-nome">Nome do projeto<span class="input"><input id="pj-nome" type="text" autocomplete="off" placeholder="ex.: meu SaaS"></span></label>
+          <label class="field" for="pj-data">Criado em<span class="input"><input id="pj-data" type="date"></span></label>
+        </div>
+        <p class="err" id="pj-erro" hidden></p>
+        <div class="actions"><button class="btn-primary" type="button" data-pj="salvar">Criar projeto</button><button class="btn-ghost" type="button" data-pj="cancelar">Cancelar</button></div>
+      </div>
+      <div id="mim-proj"></div>
+    </div>
+
   </section>
 
   <!-- Ajustes -->
@@ -1217,7 +1222,7 @@
   try { calmo = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { calmo = false; }
   const app = document.querySelector('.app');
   const tabs = document.querySelector('.tabs');
-  const ORDEM = ['mes', 'mim', 'patrimonio', 'ajustes'];
+  const ORDEM = ['mes', 'mim', 'patrimonio', 'projetos', 'ajustes'];
 
   let revelado = false;   // só anima depois que a abertura saiu
   let quieto = null;      // enquanto espera a tela parar de mudar para revelar
@@ -3777,10 +3782,11 @@
       b.setAttribute('aria-selected', String(on));
       b.tabIndex = on ? 0 : -1;
     });
-    ['mes', 'mim', 'patrimonio', 'ajustes'].forEach((id) => { $('#aba-' + id).hidden = id !== t; });
+    ['mes', 'mim', 'patrimonio', 'projetos', 'ajustes'].forEach((id) => { $('#aba-' + id).hidden = id !== t; });
     try { localStorage.setItem('caixa-aba', t); } catch (e) { /* sem armazenamento */ }
     if (t === 'patrimonio') renderPatrimonio();
     if (t === 'mim') renderMim();
+    if (t === 'projetos') renderProjetos();
     if (t === 'ajustes' && !S.aj.dirty) preencherAjustes();
     if (window.caixaMov) window.caixaMov.aba(t, antes);
   }
@@ -4094,7 +4100,7 @@
     if (qs.get('relatorio')) S.mostrarRelatorio = true;
     if (abaUrl) { abaSalva = abaUrl; history.replaceState(null, '', location.pathname); }
   } catch (e) { /* segue com a aba salva */ }
-  abrirAba(['mes', 'mim', 'patrimonio', 'ajustes'].includes(abaSalva) ? abaSalva : 'mes');
+  abrirAba(['mes', 'mim', 'patrimonio', 'projetos', 'ajustes'].includes(abaSalva) ? abaSalva : 'mes');
   $('#mes-nome').textContent = nomeMes(S.mes);
 
   (async () => {
