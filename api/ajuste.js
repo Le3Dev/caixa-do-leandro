@@ -180,7 +180,7 @@ export async function GET(request) {
       e.cols.ajustes = e.cols.ajustes || {};
       // ref=AAAA-MM-DD: o valor informado corresponde ao preço/cota desse dia (ex.: compra feita no fechamento)
       const ref = u.searchParams.get('ref') || '';
-      e.cols.ajustes[data + '-' + conta] = Object.assign({ contaId: conta, valor: Math.round(valor * 100) / 100, data, criadoEm: new Date().toISOString() }, /^\d{4}-\d{2}-\d{2}$/.test(ref) ? { cotaRef: ref } : {});
+      e.cols.ajustes[data + '-' + conta] = Object.assign({ contaId: conta, valor: Math.round(valor * 100) / 100, data, criadoEm: new Date().toISOString() }, /^\d{4}-\d{2}-\d{2}$/.test(ref) ? { cotaRef: ref } : {}, Number(u.searchParams.get('fluxo')) ? { fluxo: Number(u.searchParams.get('fluxo')), desc: (u.searchParams.get('desc') || '').slice(0, 60) || null } : {});
     });
     if (!existe) throw new ErroPedido('Conta não encontrada.', 404);
     return json({ ok: true, pendente: { conta, valor, data } });

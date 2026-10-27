@@ -1866,8 +1866,8 @@
       for (const data of Object.keys(porData).sort()) {
         const grupo = porData[data];
         const acertos = {};
-        const refs = {};
-        grupo.forEach((aj) => { if ((S.cfg.contas || []).some((c) => c.id === aj.contaId)) { acertos[aj.contaId] = Number(aj.valor); if (aj.cotaRef) refs[aj.contaId] = aj.cotaRef; } });
+        const refs = {}, fluxos = [];
+        grupo.forEach((aj) => { if ((S.cfg.contas || []).some((c) => c.id === aj.contaId)) { acertos[aj.contaId] = Number(aj.valor); if (aj.cotaRef) refs[aj.contaId] = aj.cotaRef; if (Number(aj.fluxo)) fluxos.push({ conta: aj.contaId, valor: Number(aj.fluxo), desc: aj.desc || null }); } });
         const aj = { data };
         if (Object.keys(acertos).length) {
           const e = estimativa(aj.data);
@@ -1894,7 +1894,10 @@
             }
             return item;
           });
-          await S.db.doc('checkins/' + aj.data).set({ data: aj.data, itens, cotacaoDolar: e && e.dol.v > 0 ? e.dol.v : null, salvoEm: new Date().toISOString(), origem: 'acerto' });
+          // se já havia check-in nesse dia, mantém a corretagem e as entradas anotadas nele
+          const ja = S.checkins.find((c) => c.data === aj.data) || {};
+          const fl = (ja.fluxos || []).filter((f) => !fluxos.some((x) => x.conta === f.conta)).concat(fluxos);
+          await S.db.doc('checkins/' + aj.data).set(Object.assign({ data: aj.data, itens, cotacaoDolar: e && e.dol.v > 0 ? e.dol.v : null, salvoEm: new Date().toISOString(), origem: 'acerto' }, ja.custos ? { custos: ja.custos } : {}, fl.length ? { fluxos: fl } : {}));
           const nomes = Object.keys(acertos).map((id) => (S.cfg.contas.find((c) => c.id === id) || {}).nome).filter(Boolean);
           toast(nomes.length === 1 ? nomes[0] + ' acertado para ' + R(acertos[Object.keys(acertos)[0]]) + '.' : 'Saldos acertados: ' + nomes.join(', ') + '.');
         }
