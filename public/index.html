@@ -363,7 +363,9 @@
   .cat-total b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; }
   .cat-total small { color: var(--muted); font-size: .82rem; }
   .cats { display: flex; flex-direction: column; gap: 10px; }
-  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .pj-hero { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+  .pj-hero > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .pj-hero .big { font-size: 1.4rem; }
   .pj { border-top: 1px solid var(--line); padding: 12px 0 4px; }
   .pj > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
   .pj > summary::-webkit-details-marker { display: none; }
@@ -813,6 +815,7 @@
 
   <!-- Projetos -->
   <section class="panel" id="aba-projetos" role="tabpanel" aria-labelledby="tab-projetos" hidden>
+    <div class="card" id="proj-resumo"></div>
     <div class="card" id="mim-proj-card">
       <div class="saldo-top"><h3>Projetos</h3><button class="link" type="button" data-pj="novo">+ Novo projeto</button></div>
       <div id="mim-proj-form" hidden>
@@ -3163,13 +3166,27 @@
     const box = $('#mim-proj');
     if (!box) return;
     const lista = S.projetos || [];
-    if (!lista.length) { box.innerHTML = '<p class="hint">Cadastre um projeto (como um SaaS) para acompanhar quanto custou para pôr no ar, quantas vendas teve e o retorno.</p>'; return; }
     const cs = lista.map((p) => ({ p, c: contasProjeto(p) }));
     const tg = cs.reduce((a, x) => a + x.c.gasto, 0), tv = cs.reduce((a, x) => a + x.c.venda, 0), tn = cs.reduce((a, x) => a + x.c.nVendas, 0);
-    let html = '<div class="rv-kpis">' +
-      '<div><span class="hint">Investido</span><b>' + R(tg) + '</b><small class="hint">' + lista.length + (lista.length === 1 ? ' projeto' : ' projetos') + '</small></div>' +
-      '<div><span class="hint">Vendido</span><b>' + R(tv) + '</b><small class="hint">' + tn + (tn === 1 ? ' venda' : ' vendas') + '</small></div>' +
-      '<div><span class="hint">Resultado</span><b class="' + (tv - tg >= 0 ? 't-invest' : 'neg') + '">' + (tv - tg >= 0 ? R(tv - tg) : RS(tv - tg).replace(' ', ' ')) + '</b><small class="hint">' + (tg > 0 ? 'retorno ' + pct1.format((tv - tg) / tg) : '—') + '</small></div></div>';
+    // resumo no topo da aba: soma de todos os projetos
+    const res = $('#proj-resumo');
+    if (res) {
+      const lucro = tv - tg;
+      const todos = { serie: [] };
+      const evs = [];
+      cs.forEach(({ c }) => c.itens.forEach((x) => evs.push(x)));
+      evs.sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      let g = 0, v = 0;
+      evs.forEach((x) => { if (x.tipo === 'venda') v += Number(x.valor) || 0; else g += Number(x.valor) || 0; const u = todos.serie[todos.serie.length - 1]; if (u && u.d === x.data) { u.g = g; u.v = v; } else todos.serie.push({ d: x.data, g, v }); });
+      const inicio = lista.length ? lista.map((p) => p.criadoEm).sort()[0] : null;
+      res.innerHTML = '<div class="pj-hero"><div><span class="hint">Total investido nos projetos</span><span class="big">' + R(tg) + '</span>' +
+        '<small class="hint">' + lista.length + (lista.length === 1 ? ' projeto' : ' projetos') + '</small></div>' +
+        '<div><span class="hint">Quanto rendeu</span><span class="big ' + (lucro >= 0 ? 't-invest' : 'neg') + '">' + RS(lucro) + '</span>' +
+        '<small class="hint">' + (tg > 0 ? (lucro >= 0 ? '+' : '') + num1.format(lucro / tg * 100) + '% sobre o investido · ' : '') + R(tv) + ' em ' + tn + (tn === 1 ? ' venda' : ' vendas') + '</small></div></div>' +
+        (todos.serie.length ? graficoProjeto(todos, inicio) : '');
+    }
+    if (!lista.length) { box.innerHTML = '<p class="hint">Cadastre um projeto (como um SaaS) para acompanhar quanto custou para pôr no ar, quantas vendas teve e o retorno.</p>'; return; }
+    let html = '';
     html += cs.slice().reverse().map(({ p, c }) => {
       const aberto = S.pjAberto === p.id;
       const form = S.pjForm && S.pjForm.id === p.id;
