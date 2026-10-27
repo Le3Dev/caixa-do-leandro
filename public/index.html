@@ -363,6 +363,19 @@
   .cat-total b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; }
   .cat-total small { color: var(--muted); font-size: .82rem; }
   .cats { display: flex; flex-direction: column; gap: 10px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .pj { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+  .pj > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .pj > summary::-webkit-details-marker { display: none; }
+  .pj-nome { font-weight: 700; }
+  .pj-nome small { display: block; color: var(--muted); font-weight: 400; font-size: .8rem; margin-top: 2px; }
+  .pj-val { text-align: right; white-space: nowrap; font-weight: 700; }
+  .pj-val small { display: block; font-weight: 500; font-size: .78rem; }
+  .pj-corpo { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
+  .pj-leg { display: flex; gap: 14px; font-size: .8rem; color: var(--muted); }
+  .pj-leg i { display: inline-block; width: 10px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .pj-itens .row-val.neg { color: var(--danger); }
+  .pj-tipo { display: flex; gap: 6px; }
   .rv-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .rv-kpis > div { background: var(--surface-2); border-radius: 12px; padding: 9px 8px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .rv-kpis b { font-family: var(--font-display); font-size: .95rem; font-weight: 700; }
@@ -656,6 +669,19 @@
     <div class="card" id="mim-gastos-card" hidden>
       <h3 id="mim-gastos-titulo">Gastos do mês</h3>
       <div class="panel" id="mim-gastos"></div>
+    </div>
+
+    <div class="card" id="mim-proj-card">
+      <div class="saldo-top"><h3>Projetos</h3><button class="link" type="button" data-pj="novo">+ Novo projeto</button></div>
+      <div id="mim-proj-form" hidden>
+        <div class="grid2">
+          <label class="field" for="pj-nome">Nome do projeto<span class="input"><input id="pj-nome" type="text" autocomplete="off" placeholder="ex.: meu SaaS"></span></label>
+          <label class="field" for="pj-data">Criado em<span class="input"><input id="pj-data" type="date"></span></label>
+        </div>
+        <p class="err" id="pj-erro" hidden></p>
+        <div class="actions"><button class="btn-primary" type="button" data-pj="salvar">Criar projeto</button><button class="btn-ghost" type="button" data-pj="cancelar">Cancelar</button></div>
+      </div>
+      <div id="mim-proj"></div>
     </div>
 
     <div class="card" id="mim-painel-card" hidden>
@@ -3088,11 +3114,120 @@
     html += '</div></div>';
     box.innerHTML = html;
     renderGastos();
+    renderProjetos();
     renderPainelRevenda();
     renderRevendas();
     renderVale();
     renderExtrato();
     renderSimRevenda();
+  }
+
+  /* ---------- projetos (ex.: um SaaS): quanto custou para pôr no ar, quanto vendeu e o retorno ---------- */
+  function contasProjeto(p) {
+    const itens = (p.itens || []).slice().sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    let gasto = 0, venda = 0, nVendas = 0, payback = null;
+    const serie = [];
+    itens.forEach((x) => {
+      const v = Number(x.valor) || 0;
+      if (x.tipo === 'venda') { venda += v; nVendas += Number(x.qtd) || 1; } else gasto += v;
+      if (!payback && gasto > 0 && venda >= gasto) payback = x.data;
+      const ult = serie[serie.length - 1];
+      if (ult && ult.d === x.data) { ult.g = gasto; ult.v = venda; } else serie.push({ d: x.data, g: gasto, v: venda });
+    });
+    return { itens, gasto, venda, nVendas, lucro: venda - gasto, roi: gasto > 0 ? (venda - gasto) / gasto : null, payback, serie };
+  }
+  function graficoProjeto(c, criado) {
+    if (!c.serie.length) return '';
+    const pts = [{ d: criado || c.serie[0].d, g: 0, v: 0 }].concat(c.serie);
+    const W = 360, H = 150, ml = 4, mr = 4, mt = 10, mb = 18;
+    const t0 = new Date(pts[0].d + 'T12:00:00').getTime(), t1 = Math.max(new Date(pts[pts.length - 1].d + 'T12:00:00').getTime(), t0 + 864e5);
+    const max = Math.max(...pts.map((x) => Math.max(x.g, x.v)), 1);
+    const X = (d) => ml + (W - ml - mr) * ((new Date(d + 'T12:00:00').getTime() - t0) / (t1 - t0));
+    const Y = (v) => mt + (H - mt - mb) * (1 - v / max);
+    // degraus: o acumulado só muda no dia de cada lançamento
+    const linha = (k) => pts.map((x, i) => (i ? 'H' + X(x.d).toFixed(1) + ' V' : 'M' + X(x.d).toFixed(1) + ' ') + Y(x[k]).toFixed(1)).join(' ');
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="Vendas e gastos acumulados do projeto">' +
+      '<line x1="0" x2="' + W + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '" stroke="var(--line)"></line>' +
+      '<path d="' + linha('g') + '" fill="none" stroke="var(--danger)" stroke-width="2" stroke-dasharray="4 3"></path>' +
+      '<path d="' + linha('v') + '" fill="none" stroke="var(--invest)" stroke-width="2.4"></path>' +
+      '<text class="lbl" style="font-size:9px" x="0" y="' + (H - 4) + '">' + dataCurta(pts[0].d) + '</text>' +
+      '<text class="lbl" style="font-size:9px" x="' + W + '" y="' + (H - 4) + '" text-anchor="end">' + dataCurta(pts[pts.length - 1].d) + '</text></svg>' +
+      '<div class="pj-leg"><span><i style="background:var(--invest)"></i>Vendas acumuladas</span><span><i style="background:var(--danger)"></i>Gastos acumulados</span></div>';
+  }
+  function renderProjetos() {
+    const box = $('#mim-proj');
+    if (!box) return;
+    const lista = S.projetos || [];
+    if (!lista.length) { box.innerHTML = '<p class="hint">Cadastre um projeto (como um SaaS) para acompanhar quanto custou para pôr no ar, quantas vendas teve e o retorno.</p>'; return; }
+    const cs = lista.map((p) => ({ p, c: contasProjeto(p) }));
+    const tg = cs.reduce((a, x) => a + x.c.gasto, 0), tv = cs.reduce((a, x) => a + x.c.venda, 0), tn = cs.reduce((a, x) => a + x.c.nVendas, 0);
+    let html = '<div class="rv-kpis">' +
+      '<div><span class="hint">Investido</span><b>' + R(tg) + '</b><small class="hint">' + lista.length + (lista.length === 1 ? ' projeto' : ' projetos') + '</small></div>' +
+      '<div><span class="hint">Vendido</span><b>' + R(tv) + '</b><small class="hint">' + tn + (tn === 1 ? ' venda' : ' vendas') + '</small></div>' +
+      '<div><span class="hint">Resultado</span><b class="' + (tv - tg >= 0 ? 't-invest' : 'neg') + '">' + (tv - tg >= 0 ? R(tv - tg) : RS(tv - tg).replace(' ', ' ')) + '</b><small class="hint">' + (tg > 0 ? 'retorno ' + pct1.format((tv - tg) / tg) : '—') + '</small></div></div>';
+    html += cs.slice().reverse().map(({ p, c }) => {
+      const aberto = S.pjAberto === p.id;
+      const form = S.pjForm && S.pjForm.id === p.id;
+      let h = '<details class="pj" data-pjid="' + esc(p.id) + '"' + (aberto ? ' open' : '') + '><summary><span class="pj-nome">' + esc(p.nome) +
+        '<small>criado em ' + dataBR(p.criadoEm) + ' · ' + c.nVendas + (c.nVendas === 1 ? ' venda' : ' vendas') + (c.payback ? ' · se pagou em ' + dataCurta(c.payback) : '') + '</small></span>' +
+        '<span class="pj-val ' + (c.lucro >= 0 ? 't-invest' : 'neg') + '">' + RS(c.lucro) + '<small>' + (c.roi != null ? 'retorno ' + pct1.format(c.roi) : 'sem gastos') + '</small></span></summary><div class="pj-corpo">';
+      h += '<div class="facts"><div class="fact"><span>Gastou para pôr no ar</span><b>' + R(c.gasto) + '</b></div><div class="fact"><span>Vendeu</span><b class="t-invest">' + R(c.venda) + '</b></div>' +
+        (c.nVendas ? '<div class="fact"><span>Ticket médio</span><b>' + R(c.venda / c.nVendas) + '</b></div>' : '') +
+        (!c.payback && c.gasto > c.venda && c.nVendas ? '<div class="fact"><span>Falta para se pagar</span><b>' + R(c.gasto - c.venda) + (c.venda > 0 ? '<small>~' + Math.ceil((c.gasto - c.venda) / (c.venda / c.nVendas)) + ' vendas</small>' : '') + '</b></div>' : '') + '</div>';
+      h += graficoProjeto(c, p.criadoEm);
+      if (form) {
+        const f = S.pjForm;
+        h += '<div class="preview"><div class="pj-tipo" role="group" aria-label="Tipo">' +
+          '<button class="pill" type="button" data-pjt="venda" aria-pressed="' + (f.tipo === 'venda') + '">Venda</button><button class="pill" type="button" data-pjt="gasto" aria-pressed="' + (f.tipo === 'gasto') + '">Gasto</button></div>' +
+          '<div class="grid3"><label class="field" for="pjl-valor">Valor<span class="input"><em>R$</em><input id="pjl-valor" type="text" inputmode="decimal" autocomplete="off"></span></label>' +
+          '<label class="field" for="pjl-data">Data<span class="input"><input id="pjl-data" type="date" value="' + hojeISO() + '"></span></label>' +
+          (f.tipo === 'venda' ? '<label class="field" for="pjl-qtd">Vendas<span class="input"><input id="pjl-qtd" type="text" inputmode="numeric" autocomplete="off" value="1"></span></label>' : '<span></span>') + '</div>' +
+          '<label class="field" for="pjl-desc">Descrição<span class="input"><input id="pjl-desc" type="text" autocomplete="off" placeholder="' + (f.tipo === 'venda' ? 'ex.: assinatura anual' : 'ex.: domínio, hospedagem, anúncios') + '"></span></label>' +
+          '<p class="err" id="pjl-erro" hidden></p><div class="actions"><button class="btn-primary" type="button" data-pja="salvar">Salvar</button><button class="btn-ghost" type="button" data-pja="cancelar">Cancelar</button></div></div>';
+      } else {
+        h += '<div class="btn-row"><button class="pill pill-go" type="button" data-pja="venda">+ Venda</button><button class="pill" type="button" data-pja="gasto">+ Gasto</button></div>';
+      }
+      if (c.itens.length) {
+        h += '<div class="rows pj-itens">' + c.itens.slice().reverse().map((x) =>
+          '<div class="row"><span class="row-name">' + (x.tipo === 'venda' ? 'Venda' + ((Number(x.qtd) || 1) > 1 ? ' ×' + x.qtd : '') : 'Gasto') + (x.desc ? ': ' + esc(x.desc) : '') + '<small>' + dataBR(x.data) + '</small></span>' +
+          '<span class="row-val' + (x.tipo === 'venda' ? ' t-invest' : ' neg') + '">' + (x.tipo === 'venda' ? '+ ' : '− ') + R(x.valor) +
+          '<small><button class="link danger" type="button" data-pjdel="' + esc(x.id) + '">' + (S.pjConfirmar === x.id ? 'Confirmar' : 'Apagar') + '</button></small></span></div>').join('') + '</div>';
+      }
+      h += '<div class="row-actions"><span class="spacer"></span><button class="link danger" type="button" data-pja="excluir">' + (S.pjConfirmar === p.id ? 'Confirmar exclusão do projeto' : 'Excluir projeto') + '</button></div>';
+      return h + '</div></details>';
+    }).join('');
+    box.innerHTML = html;
+  }
+  async function salvarProjeto() {
+    const erro = (m) => { $('#pj-erro').textContent = m; $('#pj-erro').hidden = false; };
+    const nome = $('#pj-nome').value.trim(), data = $('#pj-data').value;
+    if (!nome) return erro('Dê um nome ao projeto.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return erro('Escolha a data de criação.');
+    try {
+      const ref = S.db.collection('projetos').doc();
+      S.pjAberto = ref.id;
+      await ref.set({ nome, criadoEm: data, itens: [], salvoEm: new Date().toISOString() });
+      renderProjetos();
+      $('#mim-proj-form').hidden = true; $('#pj-nome').value = '';
+      toast('Projeto criado.');
+    } catch (e) { erro(msgErro(e)); }
+  }
+  async function salvarLancProjeto(p) {
+    const erro = (m) => { $('#pjl-erro').textContent = m; $('#pjl-erro').hidden = false; };
+    const valor = parseNum($('#pjl-valor').value), data = $('#pjl-data').value;
+    const qtd = S.pjForm.tipo === 'venda' ? Math.max(1, Math.round(parseNum($('#pjl-qtd').value) || 1)) : null;
+    if (!(valor > 0)) return erro('Coloque o valor.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return erro('Escolha a data.');
+    const item = { id: Date.now().toString(36), tipo: S.pjForm.tipo, valor: r2(valor), data, desc: $('#pjl-desc').value.trim() || null };
+    if (qtd) item.qtd = qtd;
+    try {
+      S.pjAberto = p.id;
+      const form = S.pjForm;
+      S.pjForm = null;
+      try { await S.db.doc('projetos/' + p.id).update({ itens: (p.itens || []).concat([item]), salvoEm: new Date().toISOString() }); } catch (e) { S.pjForm = form; throw e; }
+      renderProjetos();
+      toast(item.tipo === 'venda' ? 'Venda registrada.' : 'Gasto registrado.');
+    } catch (e) { erro(msgErro(e)); }
   }
 
   /* Painel: lucro de cada mês, o que vende mais rápido e o que está parado. */
@@ -3811,6 +3946,42 @@
 
   $('#dist-valor').addEventListener('input', () => { S.distTocado = true; });
   $('#dist-salvar').addEventListener('click', salvarDistribuir);
+  $('#mim-proj-card').addEventListener('click', async (ev) => {
+    const g = ev.target.closest('[data-pj]');
+    if (g) {
+      if (g.dataset.pj === 'novo') { $('#mim-proj-form').hidden = false; $('#pj-data').value = hojeISO(); $('#pj-erro').hidden = true; $('#pj-nome').focus(); }
+      else if (g.dataset.pj === 'cancelar') $('#mim-proj-form').hidden = true;
+      else if (g.dataset.pj === 'salvar') salvarProjeto();
+      return;
+    }
+    const det = ev.target.closest('[data-pjid]');
+    if (!det) return;
+    const p = (S.projetos || []).find((x) => x.id === det.dataset.pjid);
+    if (!p) return;
+    if (ev.target.closest('summary')) { S.pjAberto = det.open ? null : p.id; return; }
+    S.pjAberto = p.id;
+    const t = ev.target.closest('[data-pjt]');
+    if (t) { S.pjForm = { id: p.id, tipo: t.dataset.pjt }; renderProjetos(); return; }
+    const del = ev.target.closest('[data-pjdel]');
+    if (del) {
+      const id = del.dataset.pjdel;
+      if (S.pjConfirmar !== id) { S.pjConfirmar = id; renderProjetos(); return; }
+      S.pjConfirmar = null;
+      try { await S.db.doc('projetos/' + p.id).update({ itens: (p.itens || []).filter((x) => x.id !== id) }); } catch (e) { toast(msgErro(e)); }
+      return;
+    }
+    const a = ev.target.closest('[data-pja]');
+    if (!a) return;
+    const acao = a.dataset.pja;
+    if (acao === 'venda' || acao === 'gasto') { S.pjForm = { id: p.id, tipo: acao }; renderProjetos(); const v = $('#pjl-valor'); if (v) v.focus(); }
+    else if (acao === 'cancelar') { S.pjForm = null; renderProjetos(); }
+    else if (acao === 'salvar') salvarLancProjeto(p);
+    else if (acao === 'excluir') {
+      if (S.pjConfirmar !== p.id) { S.pjConfirmar = p.id; renderProjetos(); return; }
+      S.pjConfirmar = null;
+      try { await S.db.doc('projetos/' + p.id).delete(); toast('Projeto excluído.'); } catch (e) { toast(msgErro(e)); }
+    }
+  });
   $('#pat-relatorio-card').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-relatorio]');
     if (b) gerarRelatorio(b.dataset.relatorio, b);
@@ -3951,6 +4122,10 @@
       S.aportes = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
       S.loaded.aportes = true;
       render();
+    }, falhou);
+    db.collection('projetos').onSnapshot((snap) => {
+      S.projetos = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => String(a.criadoEm).localeCompare(String(b.criadoEm)));
+      renderProjetos();
     }, falhou);
     db.collection('revendas').onSnapshot((snap) => {
       S.revendas = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
