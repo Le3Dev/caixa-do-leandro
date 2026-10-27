@@ -383,6 +383,8 @@
   .rv-kpis b { font-family: var(--font-display); font-size: .95rem; font-weight: 700; }
   .rv-kpis .hint { font-size: .74rem; }
   .rv-sec { margin: 16px 0 8px; font-size: .9rem; font-weight: 700; }
+  .rv-margem { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .pj-leg { flex-wrap: wrap; }
   .rv-meses { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; align-items: end; }
   .rv-mes { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: .74rem; }
   .rv-col { height: 80px; width: 100%; max-width: 34px; display: flex; align-items: flex-end; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
@@ -3105,6 +3107,84 @@
   }
   const diasTxt = (d) => d + (d === 1 ? ' dia' : ' dias');
 
+  /* Quanto pedir numa revenda. Usa o seu histórico: a margem que você costuma tirar (a do mesmo produto, se já vendeu),
+     a taxa que costuma pagar na venda (frete, marketplace) e o tempo que leva para vender.
+     Mínimo = o que empata com o CDI até a venda, já cobrindo a taxa. Sugerido = custo + margem, cobrindo a taxa. */
+  const precoBonito = (p) => { const passo = p < 100 ? 5 : p < 1000 ? 10 : 50; return r2(Math.ceil((p + 0.1) / passo) * passo - 0.1); };
+  const RV_MARGENS = [0.2, 0.3, 0.5];
+  function margemEscolhida() {
+    if (S.rvMargem === undefined) { try { const v = localStorage.getItem('caixa-rv-margem'); S.rvMargem = v && v !== 'auto' ? Number(v) : 'auto'; } catch (e) { S.rvMargem = 'auto'; } }
+    return S.rvMargem;
+  }
+  function historicoRevenda() {
+    const vend = S.revendas.filter(vendida);
+    const bruto = vend.reduce((s2, r) => s2 + (Number(r.vendaValor) || 0), 0);
+    const taxas = vend.reduce((s2, r) => s2 + (Number(r.custosVenda) || 0), 0);
+    const margens = vend.map((r) => { const c = custoDe(r); return c > 0 ? (liquidoVenda(r) - c) / c : null; }).filter((m) => m != null).sort((a, b) => a - b);
+    const mediana = margens.length ? (margens.length % 2 ? margens[(margens.length - 1) / 2] : (margens[margens.length / 2 - 1] + margens[margens.length / 2]) / 2) : null;
+    const dias = vend.length ? vend.reduce((s2, r) => s2 + Math.max(1, diasEntre(r.compraData, r.vendaData)), 0) / vend.length : null;
+    return { vend, taxa: bruto > 0 ? Math.min(0.5, taxas / bruto) : 0, mediana, dias };
+  }
+  function precoRevenda(r, h) {
+    h = h || historicoRevenda();
+    const custo = custoDe(r);
+    const chave = String(r.nome || '').trim().toLowerCase();
+    const iguais = h.vend.filter((x) => String(x.nome || '').trim().toLowerCase() === chave);
+    let margemHist = null, base = 'padrão';
+    if (iguais.length) { margemHist = iguais.reduce((s2, x) => s2 + (liquidoVenda(x) - custoDe(x)) / Math.max(custoDe(x), 0.01), 0) / iguais.length; base = iguais.length === 1 ? 'na última venda desse produto' : 'nas ' + iguais.length + ' vendas desse produto'; }
+    else if (h.mediana != null) { margemHist = h.mediana; base = h.vend.length === 1 ? 'na sua venda' : 'nas suas ' + h.vend.length + ' vendas'; }
+    const escolha = margemEscolhida();
+    let margem = escolha === 'auto' ? (margemHist != null ? margemHist : 0.3) : escolha;
+    if (escolha === 'auto' && margemHist == null) base = 'no padrão de 30%, porque ainda não tem vendas';
+    if (escolha !== 'auto') base = 'na margem que você escolheu';
+    margem = Math.max(0.05, Math.min(2, margem));
+    const diasVenda = Math.max(1, Math.round(iguais.length ? iguais.reduce((s2, x) => s2 + Math.max(1, diasEntre(x.compraData, x.vendaData)), 0) / iguais.length : h.dias || 30));
+    const fim = vendida(r) ? r.vendaData : addDiasISO(hojeISO(), Math.max(0, diasVenda - Math.max(0, diasEntre(r.compraData, hojeISO()))));
+    const du = diasUteis(r.compraData, fim);
+    const cdiGanho = custo * (Math.pow(1 + cdiAtual() / 100, du / 252) - 1);
+    const minimo = r2((custo + cdiGanho) / (1 - h.taxa));
+    const sugerido = precoBonito(Math.max(minimo, custo * (1 + margem) / (1 - h.taxa)));
+    const lucro = r2(sugerido * (1 - h.taxa) - custo);
+    return { custo, margem, base, taxa: h.taxa, minimo, sugerido, lucro, fim, diasVenda };
+  }
+  const addDiasISO = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+
+  /* Gráfico do retorno: lucro acumulado das vendas (degraus), o que o CDI teria dado e a projeção do estoque pelo preço sugerido. */
+  function graficoRevenda(vendidas, proj) {
+    const pts = [];
+    let l = 0, c = 0;
+    const ord = vendidas.slice().sort((a, b) => String(a.r.vendaData).localeCompare(String(b.r.vendaData)));
+    const ini = S.revendas.map((r) => r.compraData).filter(Boolean).sort()[0] || hojeISO();
+    pts.push({ d: ini, l: 0, c: 0 });
+    ord.forEach((x) => { l += x.a.lucro; c += x.a.cdiGanho; const u = pts[pts.length - 1]; if (u.d === x.r.vendaData) { u.l = l; u.c = c; } else pts.push({ d: x.r.vendaData, l, c }); });
+    const hoje = hojeISO();
+    const fimReal = hoje > pts[pts.length - 1].d ? hoje : pts[pts.length - 1].d;
+    const p1 = proj ? { d: proj.d > fimReal ? proj.d : addDiasISO(fimReal, 1), l: l + proj.lucro } : null;
+    const W = 360, H = 170, ml = 4, mr = 4, mt = 14, mb = 18;
+    const fimX = p1 ? p1.d : fimReal;
+    const t = (d) => new Date(d + 'T12:00:00').getTime();
+    const t0 = t(ini), t1 = Math.max(t(fimX), t0 + 864e5);
+    const vals = pts.map((x) => x.l).concat(pts.map((x) => x.c), [0], p1 ? [p1.l] : []);
+    const mn = Math.min(...vals), mx = Math.max(...vals, 1);
+    const X = (d) => ml + (W - ml - mr) * ((t(d) - t0) / (t1 - t0));
+    const Y = (v) => mt + (H - mt - mb) * (1 - (v - mn) / (mx - mn || 1));
+    const degraus = (k) => pts.map((x, i) => (i ? 'H' + X(x.d).toFixed(1) + ' V' : 'M' + X(x.d).toFixed(1) + ' ') + Y(x[k]).toFixed(1)).join(' ') + ' H' + X(fimReal).toFixed(1);
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="Retorno acumulado das revendas">' +
+      '<line x1="0" x2="' + W + '" y1="' + Y(0).toFixed(1) + '" y2="' + Y(0).toFixed(1) + '" stroke="var(--line)"></line>';
+    if (vendidas.length) svg += '<path d="' + degraus('c') + '" fill="none" stroke="var(--muted)" stroke-width="1.6"></path>';
+    svg += '<path d="' + degraus('l') + '" fill="none" stroke="var(--invest)" stroke-width="2.4"></path>';
+    if (p1) {
+      svg += '<path d="M' + X(fimReal).toFixed(1) + ' ' + Y(l).toFixed(1) + ' L' + X(p1.d).toFixed(1) + ' ' + Y(p1.l).toFixed(1) + '" fill="none" stroke="var(--invest)" stroke-width="2" stroke-dasharray="5 4" opacity=".8"></path>' +
+        '<circle cx="' + X(p1.d).toFixed(1) + '" cy="' + Y(p1.l).toFixed(1) + '" r="3.5" fill="var(--invest)"></circle>' +
+        '<text class="lbl" style="font-size:11px;font-weight:700;fill:var(--invest)" x="' + (X(p1.d) - 6).toFixed(1) + '" y="' + Math.max(10, Y(p1.l) - 7).toFixed(1) + '" text-anchor="end">' + RS(p1.l) + '</text>';
+    }
+    svg += '<text class="lbl" style="font-size:9px" x="0" y="' + (H - 4) + '">' + dataCurta(ini) + '</text>' +
+      '<text class="lbl" style="font-size:9px" x="' + X(fimReal).toFixed(1) + '" y="' + (H - 4) + '" text-anchor="' + (p1 ? 'middle' : 'end') + '">hoje</text>' +
+      (p1 ? '<text class="lbl" style="font-size:9px" x="' + W + '" y="' + (H - 4) + '" text-anchor="end">' + dataCurta(p1.d) + '</text>' : '') + '</svg>';
+    return svg + '<div class="pj-leg"><span><i style="background:var(--invest)"></i>Lucro acumulado</span>' + (vendidas.length ? '<span><i style="background:var(--muted)"></i>Se fosse CDI</span>' : '') +
+      (p1 ? '<span><i style="background:repeating-linear-gradient(90deg,var(--invest) 0 4px,transparent 4px 7px)"></i>Vendendo o estoque</span>' : '') + '</div>';
+  }
+
   function renderMim() {
     const box = $('#mim-saldo');
     if (S.semDb) { box.innerHTML = '<div class="card empty"><p>Não deu para abrir seus dados aqui. Abra este app pelo Claude, entrando com a sua conta.</p></div>'; return; }
@@ -3267,6 +3347,30 @@
       '<div><span class="hint">Lucro total</span><b class="' + (lucroTot >= 0 ? 't-invest' : 'neg') + '">' + (lucroTot >= 0 ? R(lucroTot) : RS(lucroTot).replace(' ', '\u00a0')) + '</b><small class="hint">' + vendidas.length + (vendidas.length === 1 ? ' venda' : ' vendas') + '</small></div>' +
       '<div><span class="hint">Parado em produtos</span><b>' + R(parado) + '</b><small class="hint">' + estoque.length + (estoque.length === 1 ? ' item' : ' itens') + '</small></div>' +
       '<div><span class="hint">Tempo para vender</span><b>' + (diasMed != null ? diasTxt(diasMed) : '—') + '</b><small class="hint">em média</small></div></div>';
+    // retorno: o que já ganhou e quanto ganha se vender o estoque pelo preço sugerido
+    const h = historicoRevenda();
+    const precos = estoque.map((x) => ({ x, p: precoRevenda(x.r, h) }));
+    const lucroEst = precos.reduce((s2, y) => s2 + y.p.lucro, 0);
+    const fimProj = precos.map((y) => y.p.fim).sort().pop();
+    html += '<h4 class="rv-sec">Retorno das vendas</h4>' + graficoRevenda(vendidas, precos.length ? { d: fimProj, lucro: lucroEst } : null);
+    if (precos.length) {
+      const investido = precos.reduce((s2, y) => s2 + y.p.custo, 0);
+      html += '<p class="hint">Vendendo o que está parado pelo preço sugerido, você recebe cerca de <b class="t-invest">' + RS(lucroEst) + '</b> de lucro sobre ' + R(investido) +
+        ' (' + pct1.format(investido > 0 ? lucroEst / investido : 0) + ')' + (vendidas.length ? ', e o total vai a <b>' + RS(lucroTot + lucroEst) + '</b>' : '') + '.</p>';
+      // quanto pedir em cada produto
+      const esc0 = margemEscolhida();
+      html += '<h4 class="rv-sec">Quanto pedir</h4><div class="pj-tipo rv-margem" role="group" aria-label="Margem de lucro">' +
+        '<button class="pill" type="button" data-rvm="auto" aria-pressed="' + (esc0 === 'auto') + '">Pelo histórico</button>' +
+        RV_MARGENS.map((m) => '<button class="pill" type="button" data-rvm="' + m + '" aria-pressed="' + (esc0 === m) + '">' + Math.round(m * 100) + '%</button>').join('') + '</div>';
+      html += '<div class="rows">' + precos.map(({ x, p }) =>
+        '<div class="row"><span class="row-name">' + esc(x.r.nome) + '<small>pagou ' + R(p.custo) + ' · <span class="' + (diasMed != null && x.dias > diasMed ? 'neg' : '') + '">parado há ' + diasTxt(x.dias) + '</span></small>' +
+        '<small>mínimo ' + R(p.minimo) + '</small></span>' +
+        '<span class="row-val t-invest">' + R(p.sugerido) + '<small>lucro ' + RS(p.lucro) + '</small></span></div>').join('') + '</div>';
+      const p0 = precos[0].p;
+      html += '<p class="hint">Sugerido: o que você pagou + ' + (esc0 === 'auto' ? (h.vend.length ? 'a margem que você costuma tirar (a do mesmo produto, se já vendeu antes)' : '30% de margem, até você ter vendas') : pct1.format(esc0) + ' de margem') +
+        (p0.taxa > 0 ? ', já cobrindo os ' + pct1.format(p0.taxa) + ' de taxa/frete que você costuma pagar na venda' : '') +
+        ', arredondado. Mínimo: abaixo disso, deixar o dinheiro no CDI até a venda teria rendido mais.</p>';
+    }
     // lucro por mês (mês da venda), últimos 6 meses
     const mesAtual = mesDe(hoje);
     const meses = [];
@@ -3292,12 +3396,7 @@
       html += '<h4 class="rv-sec">Vende mais rápido</h4><div class="rows">' + rapidos.map((g, i) =>
         '<div class="row"><span class="row-name">' + (i + 1) + '. ' + esc(g.nome) + '<small>' + (g.n > 1 ? g.n + ' vendas · ' : '') + 'lucro ' + (g.n > 1 ? 'médio ' : '') + RS(g.lucro / g.n) + '</small></span><span class="row-val">' + diasTxt(Math.round(g.media)) + '</span></div>').join('') + '</div>';
     }
-    if (estoque.length) {
-      html += '<h4 class="rv-sec">Parados agora</h4><div class="rows">' + estoque.map((x) =>
-        '<div class="row"><span class="row-name">' + esc(x.r.nome) + '<small>comprado em ' + dataCurta(x.r.compraData) + '</small></span><span class="row-val">' + R(x.custo) +
-        '<small class="' + (diasMed != null && x.dias > diasMed ? 'neg' : '') + '">há ' + diasTxt(x.dias) + '</small></span></div>').join('') + '</div>';
-      if (diasMed != null && estoque.some((x) => x.dias > diasMed)) html += '<p class="hint">Em vermelho: parado há mais tempo do que você costuma levar para vender.</p>';
-    }
+    if (diasMed != null && estoque.some((x) => x.dias > diasMed)) html += '<p class="hint">Em vermelho: parado há mais tempo do que você costuma levar para vender.</p>';
     $('#mim-painel').innerHTML = html;
   }
 
@@ -3323,7 +3422,7 @@
       } else {
         html += '<span class="rv-val">' + R(a.custo) + '</span></div>' +
           '<div class="rv-sub"><span>Comprado em ' + dataCurta(r.compraData) + ' · há ' + diasTxt(a.dias) + '</span><span class="chip wait">Em estoque</span></div>' +
-          '<div class="rv-sub"><span>Para empatar com o CDI até hoje, venda por pelo menos ' + R(a.custo + a.cdiGanho) + '.</span></div>';
+          (() => { const p = precoRevenda(r); return '<div class="rv-sub"><span>Peça <b class="t-invest">' + R(p.sugerido) + '</b> (lucro de ' + R(p.lucro) + ') · não venda por menos de ' + R(p.minimo) + '.</span></div>'; })();
       }
       html += '<div class="row-actions">' + (vendida(r) ? '' : '<button class="pill pill-go" type="button" data-act="vendi">Vendi</button>') +
         '<span class="spacer"></span><button class="link danger" type="button" data-act="excluir">' + (conf ? 'Confirmar exclusão' : 'Excluir') + '</button></div></div>';
@@ -3529,6 +3628,10 @@
     $('#cp-aviso').innerHTML = v > 0
       ? 'Seu saldo vai de ' + R(s.disponivel) + ' para <b' + (depois < 0 ? ' class="neg"' : '') + '>' + R(depois) + '</b>.' + (depois < 0 ? ' Fica negativo: essa compra usa mais do que a sua parte.' : '')
       : 'Você tem ' + R(s.disponivel) + ' para gastar.';
+    if (v > 0) {
+      const p = precoRevenda({ nome: $('#cp-nome').value, compraValor: v, custos: 0, compraData: $('#cp-data').value || hojeISO() });
+      $('#cp-aviso').innerHTML += '<br>Para revender: peça uns <b class="t-invest">' + R(p.sugerido) + '</b> (lucro de ' + R(p.lucro) + ', ' + pct1.format(p.margem) + ' de margem). Mínimo ' + R(p.minimo) + '.';
+    }
   }
   async function salvarCompra() {
     const erro = (m) => { $('#cp-erro').textContent = m; $('#cp-erro').hidden = false; };
@@ -3569,7 +3672,8 @@
     const data = $('#vd-data').value;
     if (!(valor > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
       const a0 = analise(r, null, /^\d{4}-\d{2}-\d{2}$/.test(data) ? data : hojeISO());
-      $('#vd-preview').innerHTML = '<p class="hint">Você pagou ' + R(a0.custo) + '. Para ganhar do CDI, venda por mais de ' + R(a0.custo + a0.cdiGanho) + '.</p>';
+      const p0 = precoRevenda(r);
+      $('#vd-preview').innerHTML = '<p class="hint">Você pagou ' + R(a0.custo) + '. Preço sugerido: <b class="t-invest">' + R(p0.sugerido) + '</b>. Para ganhar do CDI, venda por mais de ' + R(a0.custo + a0.cdiGanho) + '.</p>';
       return;
     }
     const a = analise(r, valor - custos, data);
@@ -3932,7 +4036,16 @@
   $('#cp-salvar').addEventListener('click', salvarCompra);
   $('#vd-salvar').addEventListener('click', salvarVenda);
   $('#mv-salvar').addEventListener('click', salvarMov);
-  ['#cp-valor', '#cp-custos'].forEach((s) => $(s).addEventListener('input', avisoCompra));
+  ['#cp-valor', '#cp-custos', '#cp-nome', '#cp-data'].forEach((s) => $(s).addEventListener('input', avisoCompra));
+  $('#mim-painel').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-rvm]');
+    if (!b) return;
+    const v = b.dataset.rvm;
+    S.rvMargem = v === 'auto' ? 'auto' : Number(v);
+    try { localStorage.setItem('caixa-rv-margem', v); } catch (e) { /* só nesta sessão */ }
+    renderPainelRevenda();
+    renderRevendas();
+  });
   ['#vd-valor', '#vd-custos', '#vd-data'].forEach((s) => $(s).addEventListener('input', previewVenda));
   $('#mv-valor').addEventListener('input', hintMov);
   $$('#mv-tipos button').forEach((b) => b.addEventListener('click', () => marcarMov(b.dataset.tipo)));
