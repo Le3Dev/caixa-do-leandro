@@ -383,6 +383,11 @@
   .rv-kpis b { font-family: var(--font-display); font-size: .95rem; font-weight: 700; }
   .rv-kpis .hint { font-size: .74rem; }
   .rv-sec { margin: 16px 0 8px; font-size: .9rem; font-weight: 700; }
+  .donut .arco { cursor: pointer; transition: opacity .15s, stroke-width .15s; }
+  .donut.foco .arco { opacity: .35; }
+  .donut.foco .arco.on { opacity: 1; stroke-width: 26; }
+  .leg.on { background: var(--surface-2); border-radius: 10px; }
+  .donut .c-sub { font-size: 9px; fill: var(--muted); }
   .rv-margem { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
   .pj-leg { flex-wrap: wrap; }
   .rv-meses { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; align-items: end; }
@@ -2477,7 +2482,7 @@
     let acc = 0;
     const arcos = itens.map((it) => {
       const len = Math.max(0, it.share * C - gap);
-      const s = '<circle data-k="' + esc(it.id) + '" data-c="' + C.toFixed(2) + '" cx="84" cy="84" r="' + r + '" fill="none" stroke="' + it.cor + '" stroke-width="22" stroke-dasharray="' + len.toFixed(2) + ' ' + (C - len).toFixed(2) + '" stroke-dashoffset="' + (-acc).toFixed(2) + '" transform="rotate(-90 84 84)"></circle>';
+      const s = '<circle class="arco" data-k="' + esc(it.id) + '" data-nome="' + esc(it.nome) + '" data-pct="' + esc(pct1.format(it.share)) + '" data-valor="' + esc(R(it.hoje)) + '" data-c="' + C.toFixed(2) + '" cx="84" cy="84" r="' + r + '" fill="none" stroke="' + it.cor + '" stroke-width="22" stroke-dasharray="' + len.toFixed(2) + ' ' + (C - len).toFixed(2) + '" stroke-dashoffset="' + (-acc).toFixed(2) + '" transform="rotate(-90 84 84)"><title>' + esc(it.nome + ': ' + pct1.format(it.share)) + '</title></circle>';
       acc += it.share * C;
       return s;
     }).join('');
@@ -2487,15 +2492,15 @@
         '<svg class="donut" viewBox="0 0 168 168" role="img" aria-label="Divisão do patrimônio por aplicação">' +
           '<defs><mask id="rosca-mascara" maskUnits="userSpaceOnUse" x="0" y="0" width="168" height="168"><circle class="varredura" data-c="' + (C + 2).toFixed(2) + '" cx="84" cy="84" r="' + r + '" fill="none" stroke="#fff" stroke-width="26" stroke-dasharray="' + (C + 2).toFixed(2) + ' ' + (C + 2).toFixed(2) + '" stroke-dashoffset="0" transform="rotate(-90 84 84)"></circle></mask></defs>' +
           '<circle cx="84" cy="84" r="' + r + '" fill="none" stroke="var(--surface-2)" stroke-width="22"></circle><g mask="url(#rosca-mascara)">' + arcos + '</g>' +
-          '<text class="c-lbl" x="84" y="78" text-anchor="middle">' + (filtro ? esc(filtro) : 'investido') + '</text>' +
-          '<text class="c-total" x="84" y="98" text-anchor="middle">' + esc(filtro ? 'R$ ' + compact.format(totalF) : pct1.format(1 - parado)) + '</text>' +
+          '<text class="c-lbl" x="84" y="78" text-anchor="middle" data-orig="' + esc(filtro ? filtro : 'investido') + '">' + (filtro ? esc(filtro) : 'investido') + '</text>' +
+          '<text class="c-total" x="84" y="98" text-anchor="middle" data-orig="' + esc(filtro ? 'R$ ' + compact.format(totalF) : pct1.format(1 - parado)) + '">' + esc(filtro ? 'R$ ' + compact.format(totalF) : pct1.format(1 - parado)) + '</text>' +
         '</svg>' +
         '<div class="legend">' + (varia ? '<p class="hint leg-nota">▲▼ quanto cada um subiu ou caiu desde ' + dataCurta(varia.desde) + ', sem contar o que você aplicou</p>' : '') + itens.map((it) => {
           const vx = varia && varia.porConta[it.id];
           const seta = it.tipo === 'conta' || it.tipo === 'estoque' || !varia ? '' : !vx || vx.pct == null || Math.abs(vx.pct) < 0.005
             ? '<small class="leg-var">0,00%</small>'
             : '<small class="leg-var ' + (vx.pct >= 0 ? 't-invest' : 'neg') + '">' + (vx.pct >= 0 ? '▲ ' : '▼ ') + num2.format(Math.abs(vx.pct)) + '%</small>';
-          return '<div class="leg"><span class="sw" style="background:' + it.cor + '"></span>' +
+          return '<div class="leg" data-k="' + esc(it.id) + '"><span class="sw" style="background:' + it.cor + '"></span>' +
             '<span class="leg-name">' + esc(it.nome) + '<small>' + esc(it.lugar) + (it.tipo === 'conta' ? ' · parado' : it.renda ? ' · ' + esc(it.renda.rotulo) : '') + ' · ' + esc(pct1.format(it.share)) + '</small></span>' +
             '<span class="leg-val"><b>' + R(it.hoje) + '</b>' + seta + '</span></div>';
         }).join('') +
@@ -4036,6 +4041,44 @@
   $('#cp-salvar').addEventListener('click', salvarCompra);
   $('#vd-salvar').addEventListener('click', salvarVenda);
   $('#mv-salvar').addEventListener('click', salvarMov);
+  /* Rosca: passar o mouse (ou tocar) numa fatia mostra o nome e a porcentagem no meio, e destaca a linha da lista */
+  function focoRosca(k) {
+    const box = $('#pat-divisao');
+    const svg = box.querySelector('.donut');
+    if (!svg) return;
+    const lbl = svg.querySelector('.c-lbl'), tot = svg.querySelector('.c-total');
+    let sub = svg.querySelector('.c-sub');
+    const arco = k ? svg.querySelector('.arco[data-k="' + CSS.escape(k) + '"]') : null;
+    svg.querySelectorAll('.arco.on').forEach((a) => a.classList.remove('on'));
+    box.querySelectorAll('.leg.on').forEach((l) => l.classList.remove('on'));
+    if (!arco) {
+      svg.classList.remove('foco');
+      lbl.textContent = lbl.dataset.orig; tot.textContent = tot.dataset.orig;
+      if (sub) sub.remove();
+      return;
+    }
+    svg.classList.add('foco');
+    arco.classList.add('on');
+    const leg = box.querySelector('.leg[data-k="' + CSS.escape(k) + '"]');
+    if (leg) leg.classList.add('on');
+    const nome = arco.dataset.nome;
+    lbl.textContent = nome.length > 13 ? nome.slice(0, 12).trim() + '…' : nome;
+    tot.textContent = arco.dataset.pct;
+    if (!sub) { sub = document.createElementNS('http://www.w3.org/2000/svg', 'text'); sub.setAttribute('class', 'c-sub'); sub.setAttribute('x', '84'); sub.setAttribute('y', '113'); sub.setAttribute('text-anchor', 'middle'); svg.appendChild(sub); }
+    sub.textContent = arco.dataset.valor;
+  }
+  $('#pat-divisao').addEventListener('pointerover', (ev) => {
+    const a = ev.target.closest('.arco, .leg[data-k]');
+    if (a) focoRosca(a.dataset.k);
+  });
+  $('#pat-divisao').addEventListener('pointerout', (ev) => {
+    const a = ev.target.closest('.arco, .leg[data-k]');
+    if (a && !(ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('.arco, .leg[data-k]'))) focoRosca(null);
+  });
+  $('#pat-divisao').addEventListener('click', (ev) => {
+    const a = ev.target.closest('.arco');
+    if (a) focoRosca(a.dataset.k);
+  });
   ['#cp-valor', '#cp-custos', '#cp-nome', '#cp-data'].forEach((s) => $(s).addEventListener('input', avisoCompra));
   $('#mim-painel').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-rvm]');
