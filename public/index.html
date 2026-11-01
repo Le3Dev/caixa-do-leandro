@@ -232,17 +232,22 @@
   .prog { display: flex; flex-direction: column; gap: 6px; }
   .meter { height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
   .meter i { display: block; height: 100%; border-radius: 999px; background: var(--invest); }
-  .idx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 10px; }
-  .idx-item { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .idx-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .idx-top strong { font-size: .95rem; }
-  .idx-top small { color: var(--muted); font-size: .78rem; }
-  .idx-pontos { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; line-height: 1.15; }
+  .idx-ctrl { display: flex; flex-direction: column; gap: 10px; }
+  .idx-linha { display: flex; gap: 8px; flex-wrap: wrap; }
+  .idx-pill { font-size: .82rem; padding: 6px 10px; }
+  .idx-pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .idx-head { display: flex; flex-direction: column; gap: 4px; }
+  .idx-nome { font-size: 1.05rem; font-weight: 700; }
+  .idx-sub { color: var(--muted); font-size: .8rem; }
+  .idx-pontos { font-family: var(--font-display); font-size: 1.65rem; font-weight: 700; line-height: 1.1; }
   .idx-var { font-size: .83rem; font-weight: 700; white-space: nowrap; }
   .idx-var.up { color: var(--invest); }
   .idx-var.down { color: var(--danger); }
   .idx-var.flat { color: var(--muted); }
-  .idx-graf { min-height: 150px; }
+  .idx-graf { min-height: 205px; }
+  .idx-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 8px; }
+  .idx-item { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 8px 10px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .idx-item strong { font-size: .86rem; }
   .idx-fonte { color: var(--muted); font-size: .75rem; }
 
   /* Formulários */
@@ -1613,6 +1618,7 @@
     ajustes: [],
     cotas: {},
     distTocado: false, confirmarAp: null,
+    idxSel: 'ibovespa', idxPer: 'YTD',
     confirmarRv: null, confirmarMov: null, vendaId: null, movTipo: 'gasto', movCat: null,
     tab: 'mes', mes: mesDe(hojeISO()),
     form: { tipo: 'adiantamento', editId: null, mimTocado: false, criadoEm: null },
@@ -2146,17 +2152,40 @@
     { id: 'dowjones', nome: 'Dow Jones', cor: 'var(--c5)' },
     { id: 'nikkei', nome: 'Nikkei 225', cor: 'var(--c4)' },
   ];
+  const IDX_PER = ['1D', '5D', '1M', '6M', 'YTD', '1A', '5A', 'MAX'];
 
-  function serieIndice(id, ini, fim) {
+  function serieIndice(id) {
     const mapa = {};
     S.hist.forEach((h) => {
-      if (!h || !h.data || h.data < ini || h.data > fim) return;
+      if (!h || !h.data) return;
       const v = Number(h.indices && h.indices[id]);
       if (v > 0) mapa[h.data] = v;
     });
     const atual = S.mercado && S.mercado.indices && S.mercado.indices[id];
-    if (atual && atual.data >= ini && atual.data <= fim && Number(atual.valor) > 0) mapa[atual.data] = Number(atual.valor);
+    if (atual && Number(atual.valor) > 0) mapa[atual.data] = Number(atual.valor);
     return Object.keys(mapa).sort().map((data) => ({ data, valor: mapa[data] }));
+  }
+
+  function subMeses(dataIso, meses) {
+    const d = new Date(dataIso + 'T12:00:00');
+    d.setMonth(d.getMonth() - meses);
+    return isoDe(d);
+  }
+
+  function filtrarPeriodo(serie, per) {
+    if (!serie.length) return [];
+    if (per === 'MAX') return serie;
+    if (per === '1D') return serie.slice(-2);
+    if (per === '5D') return serie.slice(-5);
+    const fim = serie[serie.length - 1].data;
+    const ini = per === '1M' ? subMeses(fim, 1)
+      : per === '6M' ? subMeses(fim, 6)
+      : per === '1A' ? subMeses(fim, 12)
+      : per === '5A' ? subMeses(fim, 60)
+      : per === 'YTD' ? String(fim).slice(0, 4) + '-01-01'
+      : serie[0].data;
+    const out = serie.filter((p) => p.data >= ini);
+    return out.length >= 2 ? out : serie.slice(Math.max(0, serie.length - 2));
   }
 
   function pontosIndice(v) {
@@ -2177,23 +2206,10 @@
       box.innerHTML = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Carregando os índices…</p></div>';
       return;
     }
-    const hoje = hojeISO();
-    let ini = S.mes + '-01';
-    let fim = fimMes(S.mes);
-    let subtitulo = 'Mês de ' + nomeMes(S.mes, false) + ' de ' + S.mes.slice(0, 4) + ' (atualização diária).';
-    if (fim > hoje) fim = hoje;
-    if (ini > fim) {
-      const d = new Date(hoje + 'T12:00:00');
-      d.setDate(d.getDate() - 29);
-      ini = isoDe(d);
-      fim = hoje;
-      subtitulo = 'Últimos 30 dias (atualização diária).';
-    }
-
     const itens = IDX_MES
       .map((idx) => {
         const info = S.mercado && S.mercado.indices && S.mercado.indices[idx.id];
-        const serie = serieIndice(idx.id, ini, fim);
+        const serie = serieIndice(idx.id);
         return { idx, info, serie };
       })
       .filter((x) => x.info && Number(x.info.valor) > 0);
@@ -2203,44 +2219,63 @@
       return;
     }
 
-    let html = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Acompanhe alta e baixa para buscar oportunidades de longo prazo. ' + esc(subtitulo) + '</p><div class="idx-grid">';
-    itens.forEach(({ idx, info, serie }) => {
-      const pct = Number(info.variacaoDiaPct);
-      const abs = Number(info.variacaoDia);
+    if (!itens.some((x) => x.idx.id === S.idxSel)) S.idxSel = itens[0].idx.id;
+    if (!IDX_PER.includes(S.idxPer)) S.idxPer = 'YTD';
+
+    const ativo = itens.find((x) => x.idx.id === S.idxSel) || itens[0];
+    const serie = filtrarPeriodo(ativo.serie, S.idxPer);
+    const ini = serie.length ? serie[0].data : null;
+    const fim = serie.length ? serie[serie.length - 1].data : null;
+    const base = serie.length ? Number(serie[0].valor) : null;
+    const fimV = serie.length ? Number(serie[serie.length - 1].valor) : null;
+    const varPerAbs = Number.isFinite(base) && Number.isFinite(fimV) ? fimV - base : NaN;
+    const varPerPct = Number.isFinite(base) && base > 0 ? (varPerAbs / base) * 100 : NaN;
+    const clsPer = Number.isFinite(varPerPct) ? (varPerPct > 0 ? 'up' : varPerPct < 0 ? 'down' : 'flat') : 'flat';
+    const clsDia = Number(ativo.info.variacaoDiaPct) > 0 ? 'up' : Number(ativo.info.variacaoDiaPct) < 0 ? 'down' : 'flat';
+
+    let html = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Visual parecido com home broker: escolha o índice e filtre o período para acompanhar quedas e oportunidades.</p>' +
+      '<div class="idx-ctrl">' +
+        '<div class="idx-linha">' +
+          itens.map((x) => '<button class="pill idx-pill" type="button" data-idx-sel="' + esc(x.idx.id) + '" aria-pressed="' + (x.idx.id === S.idxSel ? 'true' : 'false') + '">' + esc(x.idx.nome) + '</button>').join('') +
+        '</div>' +
+        '<div class="idx-linha">' +
+          IDX_PER.map((p) => '<button class="pill idx-pill" type="button" data-idx-per="' + p + '" aria-pressed="' + (p === S.idxPer ? 'true' : 'false') + '">' + (p === 'MAX' ? 'Máx' : p) + '</button>').join('') +
+        '</div>' +
+      '</div>' +
+      '<div class="idx-head"><div class="idx-nome">' + esc(ativo.idx.nome) + '</div><div class="idx-sub">' + (fim ? 'até ' + esc(dataBR(fim)) : 'sem dados') + '</div></div>' +
+      '<div class="idx-pontos">' + esc(pontosIndice(ativo.info.valor)) + '</div>' +
+      '<div class="idx-linha"><span class="idx-var ' + clsPer + '">Período: ' + esc(varIndiceTxt(varPerPct, varPerAbs)) + '</span><span class="idx-var ' + clsDia + '">Hoje: ' + esc(varIndiceTxt(Number(ativo.info.variacaoDiaPct), Number(ativo.info.variacaoDia))) + '</span></div>' +
+      '<div class="idx-graf" id="idx-g-principal"></div>';
+    if (ini && fim) html += '<p class="hint">De ' + esc(dataCurta(ini)) + ' a ' + esc(dataCurta(fim)) + '.</p>';
+    html += '<div class="idx-resumo">' + itens.map((x) => {
+      const pct = Number(x.info.variacaoDiaPct);
+      const abs = Number(x.info.variacaoDia);
       const cls = Number.isFinite(pct) ? (pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat') : 'flat';
-      html += '<article class="idx-item">' +
-        '<div class="idx-top"><span><strong>' + esc(idx.nome) + '</strong><small>' + (info.data ? ' · ' + esc(dataCurta(info.data)) : '') + '</small></span><span class="idx-var ' + cls + '">' + esc(varIndiceTxt(pct, abs)) + '</span></div>' +
-        '<div class="idx-pontos">' + esc(pontosIndice(info.valor)) + '</div>' +
-        '<div class="idx-graf" id="idx-g-' + esc(idx.id) + '"></div>' +
-        '<div class="idx-fonte">Fonte: ' + esc(info.fonte || 'mercado') + '</div>' +
-      '</article>';
-    });
-    html += '</div></div>';
+      return '<div class="idx-item"><span><strong>' + esc(x.idx.nome) + '</strong></span><span class="idx-var ' + cls + '">' + esc(varIndiceTxt(pct, abs)) + '</span></div>';
+    }).join('') + '</div>' +
+    '<div class="idx-fonte">Fonte: ' + esc(ativo.info.fonte || 'mercado') + ' · atualização diária</div></div>';
     box.innerHTML = html;
 
-    itens.forEach(({ idx, info, serie }) => {
-      const alvo = $('#idx-g-' + idx.id);
-      if (!alvo) return;
-      if (!serie.length) {
-        alvo.innerHTML = '<p class="hint">Sem histórico suficiente neste período.</p>';
-        return;
-      }
-      const pct = Number(info.variacaoDiaPct);
-      const rot = Number.isFinite(pct) ? (pct >= 0 ? '+' : '−') + num2.format(Math.abs(pct)) + '%' : null;
-      desenharLinhas(alvo, {
-        titulo: idx.nome,
-        xIni: dataCurta(serie[0].data),
-        xFim: dataCurta(serie[serie.length - 1].data),
-        zero: false,
-        H: 150,
-        series: [{
-          valores: serie.map((p) => p.valor),
-          cor: idx.cor,
-          area: true,
-          pontos: serie.length > 1 ? [serie.length - 1] : [],
-          rotuloFim: rot,
-        }],
-      });
+    const alvo = $('#idx-g-principal');
+    if (!alvo) return;
+    if (!serie.length) {
+      alvo.innerHTML = '<p class="hint">Sem histórico suficiente nesse período.</p>';
+      return;
+    }
+    const rot = Number.isFinite(varPerPct) ? (varPerPct >= 0 ? '+' : '−') + num2.format(Math.abs(varPerPct)) + '%' : null;
+    desenharLinhas(alvo, {
+      titulo: ativo.idx.nome,
+      xIni: dataCurta(serie[0].data),
+      xFim: dataCurta(serie[serie.length - 1].data),
+      zero: false,
+      H: 205,
+      series: [{
+        valores: serie.map((p) => p.valor),
+        cor: ativo.idx.cor,
+        area: true,
+        pontos: serie.length > 1 ? [serie.length - 1] : [],
+        rotuloFim: rot,
+      }],
     });
   }
 
@@ -4318,6 +4353,19 @@
   $$('#proj-anos [data-anos]').forEach((b) => b.addEventListener('click', () => { S.proj.anos = Number(b.dataset.anos); renderPatrimonio(); }));
   $('#proj-plano').addEventListener('change', () => { S.proj.plano = $('#proj-plano').checked; renderPatrimonio(); });
   $('#proj-cdi').addEventListener('change', () => { S.proj.cdi = $('#proj-cdi').value; renderPatrimonio(); });
+  $('#mes-indices').addEventListener('click', (ev) => {
+    const bIdx = ev.target.closest('[data-idx-sel]');
+    if (bIdx) {
+      S.idxSel = bIdx.dataset.idxSel;
+      renderIndicesMes();
+      return;
+    }
+    const bPer = ev.target.closest('[data-idx-per]');
+    if (bPer) {
+      S.idxPer = bPer.dataset.idxPer;
+      renderIndicesMes();
+    }
+  });
 
   Object.values(campoAj).forEach((s) => $(s).addEventListener('input', () => { S.aj.dirty = true; previewAjustes(); }));
   $$('#aj-modo button').forEach((b) => b.addEventListener('click', () => { S.aj.modo = b.dataset.modo; S.aj.dirty = true; marcarModo(); previewAjustes(); }));

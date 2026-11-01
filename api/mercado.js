@@ -96,8 +96,9 @@ async function serie(codigo, n) {
   throw ultimoErro;
 }
 
-async function serieYahoo(simbolo, dias = 180) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(simbolo)}?range=6mo&interval=1d&includePrePost=false`;
+async function serieYahoo(simbolo, dias = 2200) {
+  const range = dias >= 1200 ? '5y' : (dias >= 250 ? '1y' : '6mo');
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(simbolo)}?range=${range}&interval=1d&includePrePost=false`;
   const r = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
   if (!r.ok) throw new Error(`Yahoo ${simbolo}: ${r.status}`);
   const j = await r.json();
@@ -126,7 +127,7 @@ async function serieYahoo(simbolo, dias = 180) {
   };
 }
 
-async function serieStooq(simbolo, dias = 180) {
+async function serieStooq(simbolo, dias = 2200) {
   const s = String(simbolo || '').toLowerCase();
   const r = await fetch(`https://stooq.com/q/d/l/?s=${encodeURIComponent(s)}&i=d`, { signal: AbortSignal.timeout(15000) });
   if (!r.ok) throw new Error(`Stooq ${simbolo}: ${r.status}`);
@@ -154,8 +155,8 @@ async function buscarIndices() {
   await Promise.all(INDICES.map(async (idx) => {
     const erros = [];
     for (const fonte of [
-      () => serieYahoo(idx.yahoo),
-      () => serieStooq(idx.stooq || idx.yahoo),
+      () => serieYahoo(idx.yahoo, 2200),
+      () => serieStooq(idx.stooq || idx.yahoo, 2200),
     ]) {
       try {
         resultados[idx.id] = await fonte();
@@ -237,6 +238,8 @@ async function atualizar() {
         hist[data].indices[idx.id] = Number(valor);
       }
     }
+    const hs = Object.keys(hist).sort();
+    hs.slice(0, Math.max(0, hs.length - 2200)).forEach((k) => delete hist[k]);
   });
   try { await atualizarCotas(); } catch (e) { console.error('cotas', e); }
   // aproveita a passada diária para guardar a cópia do mês
