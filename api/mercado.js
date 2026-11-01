@@ -61,6 +61,14 @@ export async function atualizarCotas() {
 // POST /api/mercado → botão "Atualizar agora" no app (precisa estar logado)
 
 const SERIES = { dolar: 1, cdi: 4389, selic: 432, ipca: 13522, ipcaMes: 433 };
+const INDICES = [
+  { id: 'ibovespa', nome: 'Ibovespa', yahoo: '^BVSP', stooq: '^BVSP', moeda: 'BRL' },
+  { id: 'ifix', nome: 'IFIX', yahoo: '^IFIX', stooq: '^IFIX', moeda: 'BRL' },
+  { id: 'sp500', nome: 'S&P 500', yahoo: '^GSPC', stooq: '^SPX', moeda: 'USD' },
+  { id: 'nasdaq', nome: 'Nasdaq', yahoo: '^IXIC', stooq: '^NDQ', moeda: 'USD' },
+  { id: 'dowjones', nome: 'Dow Jones', yahoo: '^DJI', stooq: '^DJI', moeda: 'USD' },
+  { id: 'nikkei', nome: 'Nikkei 225', yahoo: '^N225', stooq: '^NKX', moeda: 'JPY' },
+];
 
 const brParaIso = (d) => {
   const [dia, mes, ano] = String(d).split('/');
@@ -88,10 +96,88 @@ async function serie(codigo, n) {
   throw ultimoErro;
 }
 
+async function serieYahoo(simbolo, dias = 180) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(simbolo)}?range=6mo&interval=1d&includePrePost=false`;
+  const r = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`Yahoo ${simbolo}: ${r.status}`);
+  const j = await r.json();
+  const res = j && j.chart && j.chart.result && j.chart.result[0];
+  if (!res || !Array.isArray(res.timestamp)) throw new Error(`Yahoo ${simbolo}: sem dados`);
+  const off = Number(res.meta && res.meta.gmtoffset) || 0;
+  const fecha = (res.indicators && res.indicators.quote && res.indicators.quote[0] && res.indicators.quote[0].close) || [];
+  const pontos = [];
+  res.timestamp.forEach((t, i) => {
+    const valor = Number(fecha[i]);
+    if (!(valor > 0)) return;
+    pontos.push({
+      data: new Date((t + off) * 1000).toISOString().slice(0, 10),
+      valor: Math.round(valor * 10000) / 10000,
+    });
+  });
+  if (!pontos.length) throw new Error(`Yahoo ${simbolo}: vazio`);
+  const unicos = {};
+  pontos.forEach((p) => { unicos[p.data] = p.valor; });
+  const datas = Object.keys(unicos).sort();
+  const recorte = datas.slice(Math.max(0, datas.length - dias));
+  return {
+    dados: Object.fromEntries(recorte.map((d) => [d, unicos[d]])),
+    moeda: (res.meta && res.meta.currency) || null,
+    fonte: 'Yahoo Finance',
+  };
+}
+
+async function serieStooq(simbolo, dias = 180) {
+  const s = String(simbolo || '').toLowerCase();
+  const r = await fetch(`https://stooq.com/q/d/l/?s=${encodeURIComponent(s)}&i=d`, { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) throw new Error(`Stooq ${simbolo}: ${r.status}`);
+  const linhas = (await r.text()).trim().split('\n');
+  const cab = (linhas.shift() || '').toLowerCase().split(',');
+  const iD = cab.indexOf('date');
+  const iC = cab.indexOf('close');
+  if (iD < 0 || iC < 0) throw new Error(`Stooq ${simbolo}: formato`);
+  const dados = {};
+  linhas.forEach((linha) => {
+    const c = linha.split(',');
+    const data = c[iD];
+    const valor = Number(c[iC]);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(data) && valor > 0) dados[data] = valor;
+  });
+  const datas = Object.keys(dados).sort();
+  if (!datas.length) throw new Error(`Stooq ${simbolo}: vazio`);
+  const recorte = datas.slice(Math.max(0, datas.length - dias));
+  return { dados: Object.fromEntries(recorte.map((d) => [d, dados[d]])), moeda: null, fonte: 'Stooq' };
+}
+
+async function buscarIndices() {
+  const resultados = {};
+  const falhas = {};
+  await Promise.all(INDICES.map(async (idx) => {
+    const erros = [];
+    for (const fonte of [
+      () => serieYahoo(idx.yahoo),
+      () => serieStooq(idx.stooq || idx.yahoo),
+    ]) {
+      try {
+        resultados[idx.id] = await fonte();
+        return;
+      } catch (e) {
+        erros.push(String(e && e.message));
+      }
+    }
+    falhas[idx.id] = erros.join(' / ');
+  }));
+  if (Object.keys(falhas).length) console.error('indices', falhas);
+  return { resultados, falhas };
+}
+
 async function atualizar() {
   const [dolar, cdi, selic, ipca, ipcaMes] = await Promise.allSettled([
     serie(SERIES.dolar, 10), serie(SERIES.cdi, 10), serie(SERIES.selic, 1), serie(SERIES.ipca, 1), serie(SERIES.ipcaMes, 20),
   ]);
+  const indices = await buscarIndices().catch((e) => {
+    console.error('indices', e);
+    return { resultados: {}, falhas: { geral: String(e && e.message) } };
+  });
   const ok = (r) => (r.status === 'fulfilled' ? r.value : null);
   const falhas = Object.keys(SERIES).filter((k, i) => [dolar, cdi, selic, ipca, ipcaMes][i].status !== 'fulfilled');
   if (falhas.length === 5) throw new ErroPedido('O Banco Central não respondeu. Tente mais tarde.', 502);
@@ -106,6 +192,30 @@ async function atualizar() {
     if (i) { const u = i[i.length - 1]; atual.ipca12m = u.valor; atual.ipcaData = u.data; }
     // IPCA de cada mês, para os CDBs de inflação andarem como na corretora
     if (im) atual.ipcaMes = Object.fromEntries(im.map((p) => [p.data.slice(0, 7), p.valor]));
+    const idxOut = {};
+    for (const idx of INDICES) {
+      const got = indices.resultados[idx.id];
+      if (!got || !got.dados) continue;
+      const ds = Object.keys(got.dados).sort();
+      const ult = ds[ds.length - 1];
+      const ant = ds.length > 1 ? ds[ds.length - 2] : null;
+      const valor = Number(got.dados[ult]);
+      const valorAnt = ant ? Number(got.dados[ant]) : null;
+      const variacaoDia = Number.isFinite(valorAnt) && valorAnt > 0 ? valor - valorAnt : null;
+      idxOut[idx.id] = {
+        id: idx.id,
+        nome: idx.nome,
+        moeda: got.moeda || idx.moeda || null,
+        fonte: got.fonte,
+        data: ult,
+        valor,
+        anteriorData: ant,
+        anteriorValor: Number.isFinite(valorAnt) ? valorAnt : null,
+        variacaoDia,
+        variacaoDiaPct: Number.isFinite(variacaoDia) && valorAnt > 0 ? (variacaoDia / valorAnt) * 100 : null,
+      };
+    }
+    if (Object.keys(idxOut).length) atual.indices = idxOut;
     atual.fonte = 'Banco Central (SGS 1, 4389, 432, 13522 e 433)';
     atual.atualizadoEm = new Date().toISOString();
     m.atual = atual;
@@ -116,6 +226,15 @@ async function atualizar() {
         if (hist[p.data]) continue;
         const cdiDia = c ? [...c].reverse().find((x) => x.data <= p.data) : null;
         hist[p.data] = { data: p.data, dolar: p.valor, cdi: cdiDia ? cdiDia.valor : atual.cdi ?? null };
+      }
+    }
+    for (const idx of INDICES) {
+      const got = indices.resultados[idx.id];
+      if (!got || !got.dados) continue;
+      for (const [data, valor] of Object.entries(got.dados)) {
+        hist[data] = hist[data] || { data };
+        hist[data].indices = hist[data].indices || {};
+        hist[data].indices[idx.id] = Number(valor);
       }
     }
   });

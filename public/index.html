@@ -232,6 +232,18 @@
   .prog { display: flex; flex-direction: column; gap: 6px; }
   .meter { height: 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 10%, transparent); overflow: hidden; }
   .meter i { display: block; height: 100%; border-radius: 999px; background: var(--invest); }
+  .idx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 10px; }
+  .idx-item { border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 10px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .idx-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .idx-top strong { font-size: .95rem; }
+  .idx-top small { color: var(--muted); font-size: .78rem; }
+  .idx-pontos { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; line-height: 1.15; }
+  .idx-var { font-size: .83rem; font-weight: 700; white-space: nowrap; }
+  .idx-var.up { color: var(--invest); }
+  .idx-var.down { color: var(--danger); }
+  .idx-var.flat { color: var(--muted); }
+  .idx-graf { min-height: 150px; }
+  .idx-fonte { color: var(--muted); font-size: .75rem; }
 
   /* Formulários */
   .form h3 { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; }
@@ -568,6 +580,7 @@
 
     <button class="btn-ghost" id="btn-extra" type="button">Lançar dinheiro extra</button>
     <div id="mes-rend"></div>
+    <div id="mes-indices"></div>
   </section>
 
   <!-- Para mim -->
@@ -1526,6 +1539,7 @@
   const num2 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const num4 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
   const num1 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+  const num0 = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
   const pct1 = new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
   const R = (v) => brl.format(Number(v) || 0);
@@ -2124,6 +2138,112 @@
     box.innerHTML = svg;
   }
 
+  const IDX_MES = [
+    { id: 'ibovespa', nome: 'Ibovespa', cor: 'var(--c1)' },
+    { id: 'ifix', nome: 'IFIX', cor: 'var(--c3)' },
+    { id: 'sp500', nome: 'S&P 500', cor: 'var(--c2)' },
+    { id: 'nasdaq', nome: 'Nasdaq', cor: 'var(--c6)' },
+    { id: 'dowjones', nome: 'Dow Jones', cor: 'var(--c5)' },
+    { id: 'nikkei', nome: 'Nikkei 225', cor: 'var(--c4)' },
+  ];
+
+  function serieIndice(id, ini, fim) {
+    const mapa = {};
+    S.hist.forEach((h) => {
+      if (!h || !h.data || h.data < ini || h.data > fim) return;
+      const v = Number(h.indices && h.indices[id]);
+      if (v > 0) mapa[h.data] = v;
+    });
+    const atual = S.mercado && S.mercado.indices && S.mercado.indices[id];
+    if (atual && atual.data >= ini && atual.data <= fim && Number(atual.valor) > 0) mapa[atual.data] = Number(atual.valor);
+    return Object.keys(mapa).sort().map((data) => ({ data, valor: mapa[data] }));
+  }
+
+  function pontosIndice(v) {
+    const n = Number(v) || 0;
+    return (n >= 1000 ? num0 : num2).format(n) + ' pts';
+  }
+
+  function varIndiceTxt(pct, abs) {
+    if (!Number.isFinite(pct) || !Number.isFinite(abs)) return 'sem variação do dia';
+    const sinal = pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : '';
+    return sinal + num2.format(Math.abs(pct)) + '% (' + (abs >= 0 ? '+ ' : '− ') + num2.format(Math.abs(abs)) + ')';
+  }
+
+  function renderIndicesMes() {
+    const box = $('#mes-indices');
+    if (!box) return;
+    if (!S.loaded.mercado || !S.loaded.hist) {
+      box.innerHTML = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Carregando os índices…</p></div>';
+      return;
+    }
+    const hoje = hojeISO();
+    let ini = S.mes + '-01';
+    let fim = fimMes(S.mes);
+    let subtitulo = 'Mês de ' + nomeMes(S.mes, false) + ' de ' + S.mes.slice(0, 4) + ' (atualização diária).';
+    if (fim > hoje) fim = hoje;
+    if (ini > fim) {
+      const d = new Date(hoje + 'T12:00:00');
+      d.setDate(d.getDate() - 29);
+      ini = isoDe(d);
+      fim = hoje;
+      subtitulo = 'Últimos 30 dias (atualização diária).';
+    }
+
+    const itens = IDX_MES
+      .map((idx) => {
+        const info = S.mercado && S.mercado.indices && S.mercado.indices[idx.id];
+        const serie = serieIndice(idx.id, ini, fim);
+        return { idx, info, serie };
+      })
+      .filter((x) => x.info && Number(x.info.valor) > 0);
+
+    if (!itens.length) {
+      box.innerHTML = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Ainda sem dados de índices para mostrar.</p></div>';
+      return;
+    }
+
+    let html = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Acompanhe alta e baixa para buscar oportunidades de longo prazo. ' + esc(subtitulo) + '</p><div class="idx-grid">';
+    itens.forEach(({ idx, info, serie }) => {
+      const pct = Number(info.variacaoDiaPct);
+      const abs = Number(info.variacaoDia);
+      const cls = Number.isFinite(pct) ? (pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat') : 'flat';
+      html += '<article class="idx-item">' +
+        '<div class="idx-top"><span><strong>' + esc(idx.nome) + '</strong><small>' + (info.data ? ' · ' + esc(dataCurta(info.data)) : '') + '</small></span><span class="idx-var ' + cls + '">' + esc(varIndiceTxt(pct, abs)) + '</span></div>' +
+        '<div class="idx-pontos">' + esc(pontosIndice(info.valor)) + '</div>' +
+        '<div class="idx-graf" id="idx-g-' + esc(idx.id) + '"></div>' +
+        '<div class="idx-fonte">Fonte: ' + esc(info.fonte || 'mercado') + '</div>' +
+      '</article>';
+    });
+    html += '</div></div>';
+    box.innerHTML = html;
+
+    itens.forEach(({ idx, info, serie }) => {
+      const alvo = $('#idx-g-' + idx.id);
+      if (!alvo) return;
+      if (!serie.length) {
+        alvo.innerHTML = '<p class="hint">Sem histórico suficiente neste período.</p>';
+        return;
+      }
+      const pct = Number(info.variacaoDiaPct);
+      const rot = Number.isFinite(pct) ? (pct >= 0 ? '+' : '−') + num2.format(Math.abs(pct)) + '%' : null;
+      desenharLinhas(alvo, {
+        titulo: idx.nome,
+        xIni: dataCurta(serie[0].data),
+        xFim: dataCurta(serie[serie.length - 1].data),
+        zero: false,
+        H: 150,
+        series: [{
+          valores: serie.map((p) => p.valor),
+          cor: idx.cor,
+          area: true,
+          pontos: serie.length > 1 ? [serie.length - 1] : [],
+          rotuloFim: rot,
+        }],
+      });
+    });
+  }
+
   /* ---------- aba Mês ---------- */
   function renderMes() {
     $('#mes-nome').textContent = nomeMes(S.mes);
@@ -2132,12 +2252,14 @@
     if (S.semDb) {
       box.innerHTML = '<div class="card empty"><p>Não deu para abrir seus dados aqui. Abra este app pelo Claude, entrando com a sua conta, para lançar e salvar.</p></div>';
       $('#mes-rend').innerHTML = '';
+      $('#mes-indices').innerHTML = '';
       return;
     }
     if (!S.loaded.cfg || !S.loaded.receb) return;
     if (!S.cfg) {
       box.innerHTML = '<div class="card empty"><p>Tem o arquivo de backup do app antigo? Importe e tudo volta como estava. Se for começar do zero, coloque seu salário em Ajustes.</p><button class="btn-primary" type="button" data-importar>Importar backup</button><button class="btn-ghost" type="button" data-goto="ajustes">Abrir ajustes</button></div>';
       $('#mes-rend').innerHTML = '';
+      $('#mes-indices').innerHTML = '';
       return;
     }
 
@@ -2231,6 +2353,7 @@
     html += '</div>';
     box.innerHTML = html;
     renderRendMes();
+    renderIndicesMes();
   }
 
   /* Quanto as aplicações pelo CDI rendem no mês escolhido, projetando a partir do último check-in. */
