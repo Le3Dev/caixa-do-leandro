@@ -134,7 +134,8 @@ horário de Brasília. Gastos fixos e gastos importados do extrato contam como q
 
 ### Aviso de 80% e de 100%
 
-- **No app:** o card de gastos do mês avisa quando os gastos chegam a 80% da meta e quando passam dela.
+- **No app:** o card de gastos do mês avisa quando os gastos chegam a 80% da meta e quando passam dela
+  (só quando o card está no mês atual).
 - **No celular:** quando um gasto é gravado (`/api/escrever`), o servidor recalcula o mês atual. Se chegou a
   80% ou passou de 100%, manda uma notificação para os aparelhos inscritos. Tocar nela abre a aba Para mim
   (`/?aba=mim`).
@@ -147,6 +148,22 @@ horário de Brasília. Gastos fixos e gastos importados do extrato contam como q
 - Só vale para o mês atual: gasto lançado num mês passado não dispara aviso. Sem meta (0), não há aviso.
 - Se nenhum aparelho estiver inscrito ou o envio não chegar a nenhum, o aviso não é marcado e é tentado de novo
   na próxima gravação de gasto. Um erro na notificação vai só para o log: a gravação vale do mesmo jeito.
+
+### Ver gastos de outros meses
+
+- O card **Gastos de <mês>** abre no mês atual. Os botões **‹ ›** do topo trocam o mês: não dá para voltar antes
+  do mês do primeiro gasto nem passar do mês atual (o botão fica desligado). Mês sem gasto mostra
+  "Nenhum gasto em <mês>.". O card só some quando não há nenhum gasto lançado.
+- Em qualquer mês aparecem o total contra a meta, a comparação com o mês anterior inteiro e as barras por categoria.
+  O aviso de 80%/100% só aparece no mês atual; num mês passado aparece só quanto sobrou ou quanto passou do limite.
+- **Gráfico:** barras dos 6 meses que terminam no mês escolhido (fixos, variáveis, acima do limite e a linha do
+  limite), com esse mês em destaque. Tocar numa barra abre aquele mês.
+- **Lista do mês:** abaixo das categorias, todos os gastos do mês, do mais recente ao mais antigo, com data,
+  categoria, descrição, valor e a marca "Gasto fixo" ou "Do extrato". Editar e Excluir funcionam como no extrato
+  (inclusive a regra do fixo pulado).
+- **Filtro por categoria:** tocar numa categoria mostra só os gastos dela ("Mostrando só <categoria> · limpar");
+  tocar de novo ou em "limpar" volta a mostrar tudo. Trocar de mês limpa o filtro.
+- No card **Mês a mês**, tocar num mês da tabela "Quanto sobrou" abre esse mês no card de gastos.
 
 ### Gastos fixos
 
@@ -172,6 +189,8 @@ horário de Brasília. Gastos fixos e gastos importados do extrato contam como q
 
 - O mês atual **até hoje** é comparado com o mesmo ponto do mês passado (até o mesmo dia) e com a média dos
   3 meses anteriores, no total e por categoria.
+- O gráfico de barras dos 6 meses fica no card de gastos (ver "Ver gastos de outros meses"), e não mais no
+  card Mês a mês. O card Mês a mês continua sempre sobre o mês atual, e o relatório em PDF não mudou.
 - O relatório em PDF **"Meus gastos"** é gerado no aparelho (`window.caixaRelatorioGastosPDF(d)` em
   `public/relatorio.js`, que devolve um `Blob`) e traz:
   - os destaques;
