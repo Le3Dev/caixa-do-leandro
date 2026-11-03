@@ -1,6 +1,7 @@
 import { json, falha, autorizado, alterar, lerEstado, guardarCopia, ErroPedido } from './_lib.js';
 import { buscarCotas } from './_cotas.js';
 import { buscarPrecos } from './_precos.js';
+import { INDICES, buscarHistoricoDiario } from './_indices.js';
 
 /* Cotas dos fundos que têm CNPJ em Ajustes e preço diário dos ETFs/ações no exterior que têm código
    (ticker). Guarda até 120 dias de cada um, na mesma coleção "cotas". */
@@ -61,14 +62,6 @@ export async function atualizarCotas() {
 // POST /api/mercado → botão "Atualizar agora" no app (precisa estar logado)
 
 const SERIES = { dolar: 1, cdi: 4389, selic: 432, ipca: 13522, ipcaMes: 433 };
-const INDICES = [
-  { id: 'ibovespa', nome: 'Ibovespa', yahoo: '^BVSP', stooq: '^BVSP', moeda: 'BRL' },
-  { id: 'ifix', nome: 'IFIX', yahoo: '^IFIX', stooq: '^IFIX', moeda: 'BRL' },
-  { id: 'sp500', nome: 'S&P 500', yahoo: '^GSPC', stooq: '^SPX', moeda: 'USD' },
-  { id: 'nasdaq', nome: 'Nasdaq', yahoo: '^IXIC', stooq: '^NDQ', moeda: 'USD' },
-  { id: 'dowjones', nome: 'Dow Jones', yahoo: '^DJI', stooq: '^DJI', moeda: 'USD' },
-  { id: 'nikkei', nome: 'Nikkei 225', yahoo: '^N225', stooq: '^NKX', moeda: 'JPY' },
-];
 
 const brParaIso = (d) => {
   const [dia, mes, ano] = String(d).split('/');
@@ -96,76 +89,17 @@ async function serie(codigo, n) {
   throw ultimoErro;
 }
 
-async function serieYahoo(simbolo, dias = 2200) {
-  const range = dias >= 1200 ? '5y' : (dias >= 250 ? '1y' : '6mo');
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(simbolo)}?range=${range}&interval=1d&includePrePost=false`;
-  const r = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error(`Yahoo ${simbolo}: ${r.status}`);
-  const j = await r.json();
-  const res = j && j.chart && j.chart.result && j.chart.result[0];
-  if (!res || !Array.isArray(res.timestamp)) throw new Error(`Yahoo ${simbolo}: sem dados`);
-  const off = Number(res.meta && res.meta.gmtoffset) || 0;
-  const fecha = (res.indicators && res.indicators.quote && res.indicators.quote[0] && res.indicators.quote[0].close) || [];
-  const pontos = [];
-  res.timestamp.forEach((t, i) => {
-    const valor = Number(fecha[i]);
-    if (!(valor > 0)) return;
-    pontos.push({
-      data: new Date((t + off) * 1000).toISOString().slice(0, 10),
-      valor: Math.round(valor * 10000) / 10000,
-    });
-  });
-  if (!pontos.length) throw new Error(`Yahoo ${simbolo}: vazio`);
-  const unicos = {};
-  pontos.forEach((p) => { unicos[p.data] = p.valor; });
-  const datas = Object.keys(unicos).sort();
-  const recorte = datas.slice(Math.max(0, datas.length - dias));
-  return {
-    dados: Object.fromEntries(recorte.map((d) => [d, unicos[d]])),
-    moeda: (res.meta && res.meta.currency) || null,
-    fonte: 'Yahoo Finance',
-  };
-}
-
-async function serieStooq(simbolo, dias = 2200) {
-  const s = String(simbolo || '').toLowerCase();
-  const r = await fetch(`https://stooq.com/q/d/l/?s=${encodeURIComponent(s)}&i=d`, { signal: AbortSignal.timeout(15000) });
-  if (!r.ok) throw new Error(`Stooq ${simbolo}: ${r.status}`);
-  const linhas = (await r.text()).trim().split('\n');
-  const cab = (linhas.shift() || '').toLowerCase().split(',');
-  const iD = cab.indexOf('date');
-  const iC = cab.indexOf('close');
-  if (iD < 0 || iC < 0) throw new Error(`Stooq ${simbolo}: formato`);
-  const dados = {};
-  linhas.forEach((linha) => {
-    const c = linha.split(',');
-    const data = c[iD];
-    const valor = Number(c[iC]);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(data) && valor > 0) dados[data] = valor;
-  });
-  const datas = Object.keys(dados).sort();
-  if (!datas.length) throw new Error(`Stooq ${simbolo}: vazio`);
-  const recorte = datas.slice(Math.max(0, datas.length - dias));
-  return { dados: Object.fromEntries(recorte.map((d) => [d, dados[d]])), moeda: null, fonte: 'Stooq' };
-}
-
+// Índices: Yahoo Finance com CNBC de reserva (api/_indices.js). Cada um vem com pregaoAberto e hojeBolsa.
 async function buscarIndices() {
   const resultados = {};
   const falhas = {};
   await Promise.all(INDICES.map(async (idx) => {
-    const erros = [];
-    for (const fonte of [
-      () => serieYahoo(idx.yahoo, 2200),
-      () => serieStooq(idx.stooq || idx.yahoo, 2200),
-    ]) {
-      try {
-        resultados[idx.id] = await fonte();
-        return;
-      } catch (e) {
-        erros.push(String(e && e.message));
-      }
+    try {
+      resultados[idx.id] = await buscarHistoricoDiario(idx.id, 2200);
+    } catch (e) {
+      falhas[idx.id] = String(e && e.message);
+      if (e && e.detalhes) console.error('indices ' + idx.id, e.detalhes);
     }
-    falhas[idx.id] = erros.join(' / ');
   }));
   if (Object.keys(falhas).length) console.error('indices', falhas);
   return { resultados, falhas };
@@ -216,7 +150,14 @@ async function atualizar() {
         variacaoDiaPct: Number.isFinite(variacaoDia) && valorAnt > 0 ? (variacaoDia / valorAnt) * 100 : null,
       };
     }
-    if (Object.keys(idxOut).length) atual.indices = idxOut;
+    if (Object.keys(idxOut).length) {
+      atual.indices = idxOut;
+      atual.indicesAtualizadoEm = new Date().toISOString();
+    }
+    const semIndice = Object.keys(indices.falhas);
+    atual.indicesErro = semIndice.length
+      ? 'Não consegui atualizar ' + semIndice.map((id) => (INDICES.find((x) => x.id === id) || { nome: 'os índices' }).nome).join(', ') + ' agora. Tente de novo em alguns minutos.'
+      : null;
     atual.fonte = 'Banco Central (SGS 1, 4389, 432, 13522 e 433)';
     atual.atualizadoEm = new Date().toISOString();
     m.atual = atual;
@@ -224,15 +165,18 @@ async function atualizar() {
     const hist = e.cols.mercado_hist = e.cols.mercado_hist || {};
     if (d) {
       for (const p of d) {
-        if (hist[p.data]) continue;
+        // o dia pode já existir só com os índices: aí grava o dólar e o CDI sem apagá-los
+        if (hist[p.data] && hist[p.data].dolar != null) continue;
         const cdiDia = c ? [...c].reverse().find((x) => x.data <= p.data) : null;
-        hist[p.data] = { data: p.data, dolar: p.valor, cdi: cdiDia ? cdiDia.valor : atual.cdi ?? null };
+        hist[p.data] = Object.assign({}, hist[p.data], { data: p.data, dolar: p.valor, cdi: cdiDia ? cdiDia.valor : atual.cdi ?? null });
       }
     }
     for (const idx of INDICES) {
       const got = indices.resultados[idx.id];
       if (!got || !got.dados) continue;
       for (const [data, valor] of Object.entries(got.dados)) {
+        // pregão em andamento: a barra de hoje ainda não é fechamento (fica só em atual.indices)
+        if (got.pregaoAberto && data === got.hojeBolsa) continue;
         hist[data] = hist[data] || { data };
         hist[data].indices = hist[data].indices || {};
         hist[data].indices[idx.id] = Number(valor);
@@ -244,7 +188,7 @@ async function atualizar() {
   try { await atualizarCotas(); } catch (e) { console.error('cotas', e); }
   // aproveita a passada diária para guardar a cópia do mês
   try { await guardarCopia(estado); } catch (e) { console.error('cópia', e); }
-  return { atual: estado.cols.mercado.atual, falhas };
+  return { atual: estado.cols.mercado.atual, falhas, falhasIndices: indices.falhas };
 }
 
 export async function GET(request) {
