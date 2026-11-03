@@ -504,6 +504,14 @@
   .row-val small { display: block; color: var(--muted); font-weight: 400; font-size: .8rem; }
   .row-val small.neg { color: var(--danger); }
   .row-val.none { color: var(--muted); font-weight: 400; }
+  /* Controle de gastos: aviso do mês, mês a mês e gastos fixos */
+  .aviso-gastos { border-radius: 12px; padding: 10px 12px; font-size: .88rem; line-height: 1.45; background: var(--mine-soft); border-left: 3px solid var(--mine); }
+  .aviso-gastos.ruim { background: color-mix(in srgb, var(--danger) 14%, transparent); border-left-color: var(--danger); }
+  .mm-tab { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px 12px; align-items: baseline; font-size: .86rem; }
+  .mm-tab .h { color: var(--muted); font-size: .74rem; font-weight: 600; }
+  .mm-tab .r, .mm-tab b { text-align: right; white-space: nowrap; }
+  .mm-tab b { font-weight: 600; }
+  .mm-tab small { display: block; color: var(--muted); font-size: .76rem; font-weight: 400; }
 
   /* Ajustes */
   .contas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -642,6 +650,15 @@
       <button class="btn-ghost" id="btn-investir" type="button">Investir</button>
       <button class="btn-ghost" id="btn-compra" type="button">Revenda</button>
     </div>
+    <button class="btn-ghost" id="btn-importar-extrato" type="button">Importar extrato do Itaú (PDF)</button>
+    <input type="file" id="extrato-arquivo" accept="application/pdf" hidden>
+    <div class="panel" id="mim-importar-card" hidden>
+      <div class="card" id="mim-importar-topo">
+        <div class="saldo-top"><h3>Importar extrato</h3><button class="link" type="button" id="mim-importar-fechar">Fechar</button></div>
+        <p class="hint" id="mim-importar-status" hidden></p>
+      </div>
+      <div id="mim-importar"></div>
+    </div>
 
     <div class="card form" id="form-inv" hidden>
       <h3>Investir da sua parte</h3>
@@ -740,6 +757,42 @@
     <div class="card" id="mim-gastos-card" hidden>
       <h3 id="mim-gastos-titulo">Gastos do mês</h3>
       <div class="panel" id="mim-gastos"></div>
+    </div>
+
+    <div class="card" id="mim-meses-card" hidden>
+      <h3>Mês a mês</h3>
+      <div class="panel" id="mim-meses"></div>
+      <button class="btn-ghost" id="btn-rel-gastos" type="button">Relatório dos meus gastos (PDF)</button>
+      <p class="hint" id="rel-gastos-status" hidden></p>
+    </div>
+
+    <div class="card" id="mim-fixos-card">
+      <div class="saldo-top"><h3>Gastos fixos</h3><button class="link" type="button" id="fx-novo">+ Novo fixo</button></div>
+      <p class="hint" id="mim-fixos-resumo" hidden></p>
+      <div class="panel" id="fx-form" hidden>
+        <label class="field" for="fx-nome">Nome
+          <input id="fx-nome" type="text" autocomplete="off" placeholder="Ex.: academia, celular, streaming">
+        </label>
+        <div class="grid2">
+          <label class="field" for="fx-valor">Valor por mês
+            <span class="input" id="fx-valor-box"><em>R$</em><input id="fx-valor" type="text" inputmode="decimal" autocomplete="off"></span>
+          </label>
+          <label class="field" for="fx-dia">Dia do mês
+            <span class="input"><input id="fx-dia" type="text" inputmode="numeric" autocomplete="off" placeholder="1 a 31"></span>
+          </label>
+        </div>
+        <div class="field">Categoria
+          <div class="chips" role="group" aria-label="Categoria do gasto fixo" id="fx-cats"></div>
+        </div>
+        <label class="check" for="fx-agora"><input type="checkbox" id="fx-agora" checked> <span id="fx-agora-txt">Já conta neste mês</span></label>
+        <p class="hint" id="fx-hint">—</p>
+        <p class="err" id="fx-erro" hidden></p>
+        <div class="actions">
+          <button class="btn-primary" id="fx-salvar" type="button">Salvar fixo</button>
+          <button class="btn-ghost" id="fx-cancelar" type="button">Cancelar</button>
+        </div>
+      </div>
+      <div id="mim-fixos"><p class="hint">—</p></div>
     </div>
 
     <div class="card" id="mim-painel-card" hidden>
@@ -1225,6 +1278,14 @@
     fila = tarefa.catch(() => {});
     return tarefa;
   }
+  /* Muitas gravações de uma vez (ex.: importar um extrato): o servidor aceita até 100 por pedido,
+     então vão em partes, uma depois da outra. Com ids fixos, repetir depois de uma falha não duplica nada. */
+  async function escreverLote(ops) {
+    const lista = Array.isArray(ops) ? ops.filter(Boolean) : [];
+    for (let i = 0; i < lista.length; i += 100) await escrever(lista.slice(i, i + 100));
+    return lista.length;
+  }
+  window.caixaEscreverLote = escreverLote;
 
   const novoId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   function ref(col, id) {
@@ -1246,6 +1307,7 @@
   }
   const db = {
     doc(caminho) { const [col, id] = caminho.split('/'); return ref(col, id); },
+    lote: (ops) => escreverLote(ops),
     collection(col) {
       const q = {
         path: col,
@@ -1658,8 +1720,9 @@
   /* ---------- estado ---------- */
   const S = {
     db: null, semDb: false,
-    cfg: null, receb: [], checkins: [], mercado: null, hist: [], revendas: [], movs: [], aportes: [],
-    loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false, mercado: false, hist: false, ajustes: false, cotas: false },
+    cfg: null, receb: [], checkins: [], mercado: null, hist: [], revendas: [], movs: [], aportes: [], fixos: [], regras: [],
+    loaded: { cfg: false, receb: false, check: false, revendas: false, movs: false, aportes: false, mercado: false, hist: false, ajustes: false, cotas: false, fixos: false, regras: false },
+    movEdit: null, fxEdit: null, fxCat: null, fxConfirmar: null, impN: 0, importando: false,
     ajustes: [],
     cotas: {},
     distTocado: false, confirmarAp: null,
@@ -3536,7 +3599,7 @@
     botao.disabled = true; botao.textContent = 'Gerando…';
     try {
       await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-      await carregarScript('/relatorio.js?v=1');
+      await carregarScript('/relatorio.js?v=2');
       const blob = window.caixaRelatorioPDF(d);
       const nome = (per === '7D' ? 'relatorio-semana-' : 'relatorio-mes-') + d.ate + '.pdf';
       const arquivo = new File([blob], nome, { type: 'application/pdf' });
@@ -3805,6 +3868,8 @@
     html += '</div></div>';
     box.innerHTML = html;
     renderGastos();
+    renderMeses();
+    renderFixos();
     renderProjetos();
     renderPainelRevenda();
     renderRevendas();
@@ -4112,6 +4177,11 @@
     };
     let html = '<div class="cat-total"><b>' + R(total) + '</b><small>' + (meta > 0 ? 'de ' + R(meta) + ' que ficam com você no mês' : '') + '</small></div>';
     if (meta > 0) html += '<div class="meter" aria-hidden="true"><i style="width:' + Math.min(100, total / meta * 100).toFixed(1) + '%;background:' + (total > meta ? 'var(--danger)' : 'var(--mine)') + '"></i></div>';
+    // aviso a partir de 80% do valor do mês; vermelho ao chegar no limite
+    const av = avisoGastosMes(total, meta, hojeISO());
+    if (av) html += '<p class="aviso-gastos' + (av.nivel >= 100 ? ' ruim' : '') + '" role="status">' + esc(av.texto) + '</p>';
+    const fixosMes = r2(lista.filter((m) => m.fixoId).reduce((a, m) => a + (Number(m.valor) || 0), 0));
+    if (fixosMes > 0) html += '<p class="hint">Inclui ' + R(fixosMes) + ' de gastos fixos.</p>';
     if (passado > 0) html += '<p class="hint cat-vs">Contra ' + esc(nomeAnt) + ' inteiro (' + R(passado) + '): ' + dif(total, passado) + '</p>';
     html += '<div class="cats">' + linhas.map(([c, v, a]) =>
       '<div class="cat-row"><span>' + esc(nomeCat(c)) + '</span><span class="cmp-bar"><i style="width:' + (v / maior * 100).toFixed(1) + '%;background:var(--mine)"></i></span>' +
@@ -4128,7 +4198,8 @@
     });
     S.movs.forEach((m) => {
       const nome = m.tipo === 'gasto' ? (m.categoria ? nomeCat(m.categoria) : 'Gasto') : m.tipo === 'entrada' ? 'Entrada' : 'Ajuste de saldo';
-      ev.push({ data: m.data, ord: m.criadoEm || '', desc: m.descricao ? nome + ': ' + m.descricao : nome, sub: m.tipo === 'ajuste' && m.alvo != null ? 'Saldo acertado para ' + R(m.alvo) : '', valor: m.tipo === 'gasto' ? -Number(m.valor) : Number(m.valor), mov: m.id });
+      const sub = m.tipo === 'ajuste' && m.alvo != null ? 'Saldo acertado para ' + R(m.alvo) : m.fixoId ? 'Gasto fixo' : m.origem === 'extrato' ? 'Do extrato' : '';
+      ev.push({ data: m.data, ord: m.criadoEm || '', desc: m.descricao ? nome + ': ' + m.descricao : nome, sub, valor: m.tipo === 'gasto' ? -Number(m.valor) : Number(m.valor), mov: m.id, editavel: m.tipo === 'gasto' || m.tipo === 'entrada' });
     });
     S.aportes.filter((a) => a.origem === 'mim').forEach((a) => {
       const c = ((S.cfg && S.cfg.contas) || []).find((x) => x.id === a.contaId);
@@ -4139,13 +4210,18 @@
     box.innerHTML = ev.slice(0, 40).map((e) =>
       '<div class="ext"><span class="ext-desc">' + esc(e.desc) + '<small>' + esc(dataCurta(e.data)) + (e.sub ? ' · ' + esc(e.sub) : '') + '</small></span>' +
       '<span class="ext-val ' + (e.valor >= 0 ? 't-invest' : '') + '">' + RS(e.valor) +
+      (e.editavel ? '<button class="link" type="button" data-mov-edit="' + esc(e.mov) + '">Editar</button>' : '') +
       (e.mov ? '<button class="link danger" type="button" data-mov="' + esc(e.mov) + '">' + (S.confirmarMov === e.mov ? 'Confirmar' : 'Excluir') + '</button>' : '') +
       (e.ap ? '<button class="link danger" type="button" data-ap="' + esc(e.ap) + '">' + (S.confirmarAp === e.ap ? 'Confirmar' : 'Desfazer') + '</button>' : '') + '</span></div>').join('') +
       (ev.length > 40 ? '<p class="hint">Mostrando os 40 lançamentos mais recentes.</p>' : '');
   }
 
   /* formulários da aba Para mim */
-  function fecharFormsMim() { ['#form-compra', '#form-venda', '#form-mov', '#form-inv'].forEach((s) => { $(s).hidden = true; }); }
+  function fecharFormsMim() {
+    ['#form-compra', '#form-venda', '#form-mov', '#form-inv'].forEach((s) => { $(s).hidden = true; });
+    S.movEdit = null;
+    $('#mv-tipos').hidden = false;
+  }
   function abrirInvestir() {
     if (!S.cfg || !((S.cfg.contas || []).some((c) => c.tipo !== 'conta'))) { abrirAba('ajustes'); toast('Primeiro cadastre suas aplicações em Ajustes.'); return; }
     fecharFormsMim();
@@ -4305,7 +4381,8 @@
       toast('Venda salva. ' + (lucro >= 0 ? 'Lucro de ' + R(lucro) + '.' : 'Prejuízo de ' + R(-lucro) + '.'));
     } catch (e) { erro(msgErro(e)); } finally { btn.disabled = false; }
   }
-  const CATS = [['uber', 'Uber'], ['ifood', 'iFood'], ['restaurante', 'Restaurante'], ['mercado', 'Mercado'], ['lazer', 'Lazer'], ['outro', 'Outro']];
+  // categorias dos gastos (contrato com extrato.js e relatorio.js): os ids antigos não mudam
+  const CATS = [['uber', 'Uber e 99'], ['ifood', 'iFood'], ['restaurante', 'Restaurante'], ['mercado', 'Mercado'], ['transporte', 'Transporte'], ['combustivel', 'Combustível'], ['farmacia', 'Farmácia'], ['compras', 'Compras'], ['assinaturas', 'Assinaturas'], ['viagem', 'Viagem'], ['lazer', 'Lazer'], ['outro', 'Outro']];
   const nomeCat = (id) => (CATS.find((c) => c[0] === id) || [null, 'Outro'])[1];
   function marcarCat(cat) {
     S.movCat = cat;
@@ -4323,20 +4400,26 @@
     const s = saldoMim();
     const v = parseNum($('#mv-valor').value);
     let t;
-    if (S.movTipo === 'ajuste') t = 'O app mostra ' + R(s.disponivel) + '. Coloque o valor real e ele acerta a diferença' + (Number.isFinite(v) ? ' (' + RS(v - s.disponivel) + ')' : '') + '.';
+    const orig = S.movEdit ? S.movs.find((x) => x.id === S.movEdit) : null;
+    if (orig) t = 'Antes: ' + R(orig.valor) + ' em ' + dataBR(orig.data) + '.' + (orig.fixoId ? ' É um gasto fixo: a mudança vale só para este lançamento.' : '');
+    else if (S.movTipo === 'ajuste') t = 'O app mostra ' + R(s.disponivel) + '. Coloque o valor real e ele acerta a diferença' + (Number.isFinite(v) ? ' (' + RS(v - s.disponivel) + ')' : '') + '.';
     else if (S.movTipo === 'gasto') t = 'Sai do seu saldo de ' + R(s.disponivel) + (v > 0 ? ' e fica ' + R(s.disponivel - v) : '') + '.';
     else t = 'Entra no seu saldo, separado do investimento. Use para dinheiro que não é salário, como um presente.';
     $('#mv-hint').textContent = t;
   }
-  function abrirMov(tipo) {
+  // mov: lançamento (gasto ou entrada) que está sendo editado
+  function abrirMov(tipo, mov) {
     fecharFormsMim();
+    S.movEdit = mov ? mov.id : null;
     // no ajuste, o campo já vem com o saldo de agora para você só corrigir
-    $('#mv-valor').value = tipo === 'ajuste' ? num2.format(saldoMim().disponivel) : '';
-    $('#mv-desc').value = '';
-    $('#mv-data').value = hojeISO();
+    $('#mv-valor').value = mov ? num2.format(Number(mov.valor) || 0) : tipo === 'ajuste' ? num2.format(saldoMim().disponivel) : '';
+    $('#mv-desc').value = mov ? mov.descricao || '' : '';
+    $('#mv-data').value = mov ? mov.data : hojeISO();
     $('#mv-erro').hidden = true;
-    marcarCat(null);
+    marcarCat(mov ? mov.categoria || 'outro' : null);
     marcarMov(tipo);
+    $('#mv-tipos').hidden = !!mov;
+    if (mov) $('#mv-titulo').textContent = tipo === 'gasto' ? 'Editar gasto' : 'Editar entrada';
     $('#form-mov').hidden = false;
     rolar($('#form-mov'));
     $('#mv-valor').focus();
@@ -4348,6 +4431,24 @@
     const data = $('#mv-data').value;
     const descricao = $('#mv-desc').value.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return erro('Escolha a data.');
+    if (S.movEdit) {
+      // editar mantém o resto do lançamento (fixo, extrato, quando foi criado)
+      const id = S.movEdit;
+      const orig = S.movs.find((x) => x.id === id);
+      if (!orig) return erro('Esse lançamento não existe mais. Feche e tente de novo.');
+      if (!(v > 0)) return erro('Coloque o valor.');
+      const novo = Object.assign({}, orig, { valor: r2(v), data, descricao, editadoEm: new Date().toISOString() });
+      delete novo.id;
+      if (novo.tipo === 'gasto') novo.categoria = S.movCat || 'outro';
+      const btnE = $('#mv-salvar');
+      btnE.disabled = true;
+      try {
+        await S.db.doc('movimentos/' + id).set(novo);
+        fecharFormsMim();
+        toast('Lançamento atualizado.');
+      } catch (e) { erro(msgErro(e)); } finally { btnE.disabled = false; }
+      return;
+    }
     let doc;
     if (S.movTipo === 'ajuste') {
       if (!Number.isFinite(v)) return erro('Coloque quanto você tem de verdade.');
@@ -4367,6 +4468,520 @@
       fecharFormsMim();
       toast('Salvo.');
     } catch (e) { erro(msgErro(e)); } finally { btn.disabled = false; }
+  }
+
+  /* ---------- controle de gastos: contas (sem tela) ----------
+     Gastos fixos do mês, comparação mês a mês, aviso de 80%/100% e dados do relatório em PDF.
+     O mês é o mês calendário da data do gasto; só entram lançamentos do tipo gasto. */
+  const MESES_CURTOS = ['jan.', 'fev.', 'mar.', 'abr.', 'mai.', 'jun.', 'jul.', 'ago.', 'set.', 'out.', 'nov.', 'dez.'];
+  const mesAbrev = (m) => MESES_CURTOS[Number(m.slice(5, 7)) - 1] + ' de ' + m.slice(0, 4);
+  const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+  const catValida = (c) => (CATS.some((x) => x[0] === c) ? c : 'outro');
+  const idFixoMes = (fixoId, mes) => 'fixo-' + fixoId + '-' + mes;
+  // o dia do fixo dentro do mês: 31 vira o último dia nos meses mais curtos
+  const diaNoMes = (mes, dia) => mes + '-' + String(Math.min(Math.max(1, Math.round(Number(dia) || 1)), Number(fimMes(mes).slice(8, 10)))).padStart(2, '0');
+  const fixoValeNoMes = (f, mes) => !!f && f.ativo !== false && Number(f.valor) > 0 && String(f.desde || '') <= mes && !(f.pulados || []).includes(mes);
+  const gastoDoFixo = (f, mes, agora) => ({ tipo: 'gasto', valor: r2(f.valor), data: diaNoMes(mes, f.dia), categoria: catValida(f.categoria), descricao: String(f.nome || 'Gasto fixo'), fixoId: f.id, criadoEm: agora });
+  /* O que falta lançar dos fixos no mês: um gasto por fixo ativo, com id fixo (repetir não duplica). */
+  function fixosParaLancar(fixos, movs, mes, agora) {
+    const ja = new Set((movs || []).map((m) => m.id));
+    return (fixos || []).filter((f) => fixoValeNoMes(f, mes) && !ja.has(idFixoMes(f.id, mes)))
+      .map((f) => ({ op: 'set', col: 'movimentos', id: idFixoMes(f.id, mes), data: gastoDoFixo(f, mes, agora) }));
+  }
+  // mês de um gasto de fixo: o do id, que é o que impede o gasto de ser lançado de novo
+  function mesDoFixo(m) {
+    const id = String(m.id || ''), x = id.slice(-7);
+    return m.fixoId && /^\d{4}-\d{2}$/.test(x) && id === idFixoMes(m.fixoId, x) ? x : mesDe(m.data);
+  }
+  /* Apagar o gasto de um fixo marca o mês como pulado no fixo, no mesmo pedido, para ele não voltar. */
+  function opsExcluirMov(m, fixos) {
+    const ops = [{ op: 'delete', col: 'movimentos', id: m.id }];
+    const f = m.fixoId ? (fixos || []).find((x) => x.id === m.fixoId) : null;
+    const mes = f ? mesDoFixo(m) : null;
+    if (f && !(f.pulados || []).includes(mes)) ops.push({ op: 'update', col: 'fixos', id: f.id, data: { pulados: (f.pulados || []).concat(mes).sort() } });
+    return ops;
+  }
+  /* Quanto do mês já está preso em fixos: os lançados mais os que ainda vão entrar. */
+  function fixosDoMes(fixos, movs, mes) {
+    const lancados = (movs || []).filter((m) => m.tipo === 'gasto' && m.fixoId && mesDe(m.data) === mes).reduce((a, m) => a + (Number(m.valor) || 0), 0);
+    const faltam = fixosParaLancar(fixos, movs, mes, '').reduce((a, o) => a + o.data.valor, 0);
+    return r2(lancados + faltam);
+  }
+  /* Aviso na tela, nas mesmas faixas da notificação: de 80% em diante; vermelho ao chegar no limite. */
+  function avisoGastosMes(total, meta, hoje) {
+    if (!(meta > 0)) return null;
+    const gc = Math.round(total * 100), mc = Math.round(meta * 100);
+    if (gc * 10 < mc * 8) return null;
+    const mes = mesDe(hoje), nome = nomeMes(mes, false);
+    if (gc > mc) return { nivel: 100, texto: 'Passou ' + R((gc - mc) / 100) + ' do limite de ' + nome + '. Você gastou ' + R(total) + ' dos ' + R(meta) + '.' };
+    if (gc === mc) return { nivel: 100, texto: 'Você chegou ao limite de ' + nome + ': já usou os ' + R(meta) + ' inteiros.' };
+    const dias = Number(fimMes(mes).slice(8, 10)) - Number(String(hoje).slice(8, 10)) + 1;
+    return { nivel: 80, texto: 'Você já usou ' + Math.floor(gc * 100 / mc) + '% dos ' + R(meta) + ' de ' + nome + '. Sobram ' + R((mc - gc) / 100) + ' para ' + dias + (dias === 1 ? ' dia' : ' dias') + '.' };
+  }
+  /* Gastos de um mês: total, fixos x variáveis e por categoria. */
+  function resumoGastosMes(movs, mes) {
+    const lista = (movs || []).filter((m) => m.tipo === 'gasto' && mesDe(m.data) === mes);
+    const porCat = {};
+    let total = 0, fixos = 0;
+    lista.forEach((m) => {
+      const v = Number(m.valor) || 0;
+      const c = catValida(m.categoria);
+      total += v;
+      if (m.fixoId) fixos += v;
+      porCat[c] = r2((porCat[c] || 0) + v);
+    });
+    return { mes, lista, total: r2(total), fixos: r2(fixos), variaveis: r2(total - fixos), porCat };
+  }
+  /* Gasto do mês até o dia N. Os fixos contam desde o dia 1º, que é quando descontam. */
+  function gastoAteDia(movs, mes, dia) {
+    return r2((movs || []).filter((m) => m.tipo === 'gasto' && mesDe(m.data) === mes && (m.fixoId || Number(String(m.data).slice(8, 10)) <= dia))
+      .reduce((a, m) => a + (Number(m.valor) || 0), 0));
+  }
+  // 'ago. a out.'
+  function faixaMeses(ms) {
+    const o = ms.slice().sort();
+    const n = (m) => MESES_CURTOS[Number(m.slice(5, 7)) - 1];
+    return o.length > 1 ? n(o[0]) + ' a ' + n(o[o.length - 1]) : o.length ? n(o[0]) : '';
+  }
+  /* Mês a mês: os últimos 6 meses e o mês atual comparado de forma justa (até o mesmo dia)
+     com o mês passado e com a média dos 3 meses anteriores. Meses antes do primeiro gasto não entram nas médias. */
+  function comparativoGastos(movs, meta, hoje) {
+    const mes = mesDe(hoje), dia = Number(String(hoje).slice(8, 10));
+    const gastos = (movs || []).filter((m) => m.tipo === 'gasto' && /^\d{4}-\d{2}-\d{2}$/.test(String(m.data || '')));
+    const primeiro = gastos.reduce((p, m) => (mesDe(m.data) < p ? mesDe(m.data) : p), mes);
+    const meses = [];
+    for (let i = 5; i >= 0; i--) {
+      const r = resumoGastosMes(gastos, addMes(mes, -i));
+      r.sobra = r2(meta - r.total);
+      meses.push(r);
+    }
+    const atual = meses[5];
+    const ant = addMes(mes, -1);
+    const anteriores = [1, 2, 3].map((k) => addMes(mes, -k)).filter((m) => m >= primeiro);
+    const resAnt = anteriores.map((m) => resumoGastosMes(gastos, m));
+    const media = (vals) => (vals.length ? r2(vals.reduce((a, v) => a + v, 0) / vals.length) : null);
+    const ids = new Set(Object.keys(atual.porCat));
+    resAnt.forEach((r) => Object.keys(r.porCat).forEach((k) => ids.add(k)));
+    const ordem = (id) => CATS.findIndex((c) => c[0] === id);
+    const categorias = Array.from(ids).map((id) => {
+      const a = r2(atual.porCat[id] || 0);
+      const m3 = media(resAnt.map((r) => r.porCat[id] || 0)) || 0;
+      return { id, nome: nomeCat(id), atual: a, media3: m3, dif: r2(a - m3) };
+    }).sort((x, y) => y.atual - x.atual || y.media3 - x.media3 || ordem(x.id) - ordem(y.id));
+    const maiores = atual.lista.slice().sort((a, b) => (Number(b.valor) || 0) - (Number(a.valor) || 0) || String(a.data).localeCompare(String(b.data))).slice(0, 10)
+      .map((m) => ({ data: m.data, descricao: String(m.descricao || '') || nomeCat(catValida(m.categoria)), categoria: nomeCat(catValida(m.categoria)), valor: r2(m.valor) }));
+    return {
+      mes, dia, meta, meses, atual, anteriores, categorias, maiores,
+      ateHoje: gastoAteDia(gastos, mes, dia),
+      mesmoPontoMesPassado: ant >= primeiro ? gastoAteDia(gastos, ant, dia) : null,
+      mediaAnteriores3: media(resAnt.map((r) => r.total)),
+      mediaMesmoPonto3: media(anteriores.map((m) => gastoAteDia(gastos, m, dia))),
+    };
+  }
+  /* Frases curtas para o relatório (sem setas: a fonte do PDF não tem esses símbolos). */
+  function destaquesGastos(c) {
+    const out = [];
+    const nome = nomeMes(c.mes, false), nomeAnt = nomeMes(addMes(c.mes, -1), false);
+    const dif = (v, ref) => { const d = r2(v - ref); return Math.abs(d) < 0.005 ? 'o mesmo valor' : R(Math.abs(d)) + (d > 0 ? ' a mais' : ' a menos'); };
+    if (c.meta > 0) {
+      const sobra = r2(c.meta - c.atual.total);
+      out.push(sobra >= 0 ? 'Sobram ' + R(sobra) + ' dos ' + R(c.meta) + ' de ' + nome + '.' : 'Passou ' + R(-sobra) + ' do limite de ' + R(c.meta) + ' em ' + nome + '.');
+    }
+    if (c.mesmoPontoMesPassado != null) out.push('Até o dia ' + c.dia + ' você gastou ' + R(c.ateHoje) + '; no mesmo ponto de ' + nomeAnt + ', ' + R(c.mesmoPontoMesPassado) + ' (' + dif(c.ateHoje, c.mesmoPontoMesPassado) + ' agora).');
+    if (c.mediaMesmoPonto3 != null) out.push('Na média de ' + faixaMeses(c.anteriores) + ', até o dia ' + c.dia + ' você gastava ' + R(c.mediaMesmoPonto3) + ' (' + dif(c.ateHoje, c.mediaMesmoPonto3) + ' agora).');
+    if (c.atual.fixos > 0) out.push('Gastos fixos: ' + R(c.atual.fixos) + (c.meta > 0 ? ', ' + Math.round(c.atual.fixos / c.meta * 100) + '% dos ' + R(c.meta) : '') + '.');
+    if (c.anteriores.length) {
+      c.categorias.filter((x) => x.media3 > 0 && x.dif > 0.005).sort((a, b) => b.dif - a.dif).slice(0, 2)
+        .forEach((x) => out.push(x.nome + ' já passou da média do mês inteiro em ' + R(x.dif) + '.'));
+    }
+    const acima = c.meta > 0 ? c.meses.slice(0, 5).filter((m) => m.total > c.meta) : [];
+    if (acima.length) {
+      const quais = acima.map((m) => nomeMes(m.mes, false)).join(', ');
+      out.push(acima.length === 1 ? 'Um dos 5 meses anteriores passou do limite: ' + quais + '.' : acima.length + ' dos 5 meses anteriores passaram do limite: ' + quais + '.');
+    }
+    return out;
+  }
+  /* Dados do relatório em PDF dos gastos (contrato com relatorio.js: window.caixaRelatorioGastosPDF). */
+  function montarRelatorioGastos(c, hoje) {
+    const lista = (o) => Object.entries(o).map(([id, v]) => ({ id, nome: nomeCat(id), v: r2(v) })).sort((a, b) => b.v - a.v);
+    return {
+      titulo: 'Meus gastos · ' + mesAbrev(c.mes),
+      ate: hoje,
+      meta: c.meta,
+      meses: c.meses.map((m) => ({ mes: m.mes, nome: mesAbrev(m.mes), total: m.total, fixos: m.fixos, variaveis: m.variaveis, sobra: m.sobra, porCat: lista(m.porCat) })),
+      atual: { mes: c.mes, nome: mesAbrev(c.mes), total: c.atual.total, ateDia: c.dia, mesmoPontoMesPassado: c.mesmoPontoMesPassado, mediaAnteriores3: c.mediaAnteriores3 },
+      categorias: c.categorias.map((x) => ({ id: x.id, nome: x.nome, atual: x.atual, media3: x.media3, dif: x.dif })),
+      maiores: c.maiores,
+      destaques: destaquesGastos(c),
+    };
+  }
+  const ID_OK = /^[A-Za-z0-9_.\-:@+~]{1,200}$/;
+  /* Id de uma regra: o da regra que já existe com o mesmo padrão ou um tirado do próprio padrão (sempre o mesmo). */
+  function idRegra(padrao, regras) {
+    const p = String(padrao).trim().toLowerCase();
+    const ja = (regras || []).find((r) => String(r.padrao || '').trim().toLowerCase() === p && ID_OK.test(String(r.id || '')));
+    if (ja) return ja.id;
+    let h = 5381;
+    for (const ch of p) h = ((h * 33) ^ ch.codePointAt(0)) >>> 0;
+    const slug = p.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    return 'r-' + (slug ? slug + '-' : '') + h.toString(36);
+  }
+  /* Pedidos para gravar uma importação: os movimentos prontos (id dado pelo extrato.js) e as regras aprendidas. */
+  function opsImportacao(movimentos, regrasNovas, regras, agora) {
+    const ops = [];
+    (movimentos || []).forEach((m) => {
+      if (!m) return;
+      const id = String(m.id || '');
+      const doc = Object.assign({}, m);
+      delete doc.id;
+      if (!ID_OK.test(id) || !(doc.tipo === 'gasto' || doc.tipo === 'entrada') || !(Number(doc.valor) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(doc.data || ''))) {
+        throw new Error('Um lançamento do extrato veio incompleto (' + String(doc.descricao || id || 'sem descrição').slice(0, 40) + '). Nada foi salvo.');
+      }
+      doc.valor = r2(doc.valor);
+      if (doc.tipo === 'gasto') doc.categoria = catValida(doc.categoria);
+      else delete doc.categoria;
+      if (!doc.criadoEm) doc.criadoEm = agora;
+      ops.push({ op: 'set', col: 'movimentos', id, data: doc });
+    });
+    const porId = new Map();
+    (regrasNovas || []).forEach((r) => {
+      const padrao = String((r && r.padrao) || '').trim();
+      if (!padrao) return;
+      const id = idRegra(padrao, regras);
+      const ja = (regras || []).find((x) => x.id === id);
+      porId.set(id, { padrao, categoria: r.categoria ? catValida(r.categoria) : null, acao: r.acao === 'ignorar' ? 'ignorar' : 'importar', criadoEm: (ja && ja.criadoEm) || agora });
+    });
+    porId.forEach((data, id) => ops.push({ op: 'set', col: 'regras', id, data }));
+    return ops;
+  }
+
+  /* ---------- controle de gastos: tela (mês a mês, fixos, importação do extrato e relatório) ---------- */
+  /* Barras dos últimos 6 meses: fixos embaixo, variáveis em cima, o que passou do limite em vermelho e a linha do limite. */
+  function graficoMeses(c) {
+    const W = 360, H = 180, mt = 18, mb = 20, ml = 2, mr = 2;
+    const n = c.meses.length;
+    const max = Math.max(c.meta * 1.08, ...c.meses.map((m) => m.total), 1);
+    const Y = (v) => mt + (H - mt - mb) * (1 - v / max);
+    const slot = (W - ml - mr) / n, bw = Math.min(36, slot * 0.58);
+    const y0 = Y(0);
+    const ret = (x, y1, y2, cor) => (y2 - y1 > 0.2 ? '<rect x="' + x.toFixed(1) + '" y="' + y1.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y2 - y1).toFixed(1) + '" rx="2" fill="' + cor + '"></rect>' : '');
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="Gastos dos últimos 6 meses e o limite do mês">' +
+      '<line x1="0" x2="' + W + '" y1="' + y0.toFixed(1) + '" y2="' + y0.toFixed(1) + '" stroke="var(--line)"></line>';
+    c.meses.forEach((m, i) => {
+      const x = ml + slot * i + (slot - bw) / 2, cx = (x + bw / 2).toFixed(1);
+      const yF = Y(m.fixos), yT = Y(m.total);
+      const passou = c.meta > 0 && m.total > c.meta;
+      svg += ret(x, yF, y0, 'var(--c2)') + ret(x, yT, yF, 'var(--mine)');
+      if (passou) svg += ret(x, yT, Y(c.meta), 'var(--danger)');
+      if (m.total > 0) svg += '<text class="lbl" x="' + cx + '" y="' + (yT - 5).toFixed(1) + '" text-anchor="middle"' + (passou ? ' style="fill:var(--danger)"' : '') + '>' + esc(compact.format(m.total)) + '</text>';
+      svg += '<text class="' + (i === n - 1 ? 'lbl lbl-strong' : 'lbl') + '" x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle">' + esc(nomeMes(m.mes, false).slice(0, 3)) + '</text>';
+    });
+    if (c.meta > 0) { const ym = Y(c.meta).toFixed(1); svg += '<line x1="0" x2="' + W + '" y1="' + ym + '" y2="' + ym + '" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"></line>'; }
+    return svg + '</svg>';
+  }
+  function renderMeses() {
+    const card = $('#mim-meses-card');
+    const meta = plano(S.cfg).meta;
+    const c = comparativoGastos(S.movs, meta, hojeISO());
+    if (!c.meses.some((m) => m.total > 0)) { card.hidden = true; return; }
+    card.hidden = false;
+    const nomeAt = nomeMes(c.mes, false), nomeAnt = nomeMes(addMes(c.mes, -1), false);
+    const faixa = faixaMeses(c.anteriores);
+    // gastar menos é bom: ▼ em verde, ▲ em vermelho
+    const vs = (v, ref) => {
+      const d = r2(v - ref);
+      if (Math.abs(d) < 0.005) return '<em class="dif">igual</em>';
+      return '<em class="dif ' + (d > 0 ? 'mais' : 'menos') + '">' + (d > 0 ? '▲ ' : '▼ ') + R(Math.abs(d)) + (d > 0 ? ' a mais' : ' a menos') + ' neste mês</em>';
+    };
+    let html = '<div class="chart" id="mim-meses-graf">' + graficoMeses(c) + '</div>' +
+      '<div class="chart-legend"><span><i class="sw" style="background:var(--c2)"></i>Fixos</span><span><i class="sw" style="background:var(--mine)"></i>Variáveis</span>' +
+      (meta > 0 ? '<span><i class="sw" style="background:var(--danger)"></i>Acima do limite</span><span><i class="ln dash"></i>Limite de ' + R(meta) + '</span>' : '') + '</div>';
+    // comparação justa: até o mesmo dia
+    html += '<h4 class="rv-sec">' + esc(cap(nomeAt)) + ' até o dia ' + c.dia + '</h4><div class="facts">' +
+      '<div class="fact"><span>Você gastou<small>Os fixos contam desde o dia 1º</small></span><b>' + R(c.ateHoje) + '</b></div>';
+    if (c.mesmoPontoMesPassado != null) html += '<div class="fact"><span>No mesmo ponto de ' + esc(nomeAnt) + '<small>' + vs(c.ateHoje, c.mesmoPontoMesPassado) + '</small></span><b>' + R(c.mesmoPontoMesPassado) + '</b></div>';
+    if (c.mediaMesmoPonto3 != null) {
+      html += '<div class="fact"><span>Média de ' + esc(faixa) + ' no mesmo ponto<small>' + vs(c.ateHoje, c.mediaMesmoPonto3) + '</small></span><b>' + R(c.mediaMesmoPonto3) + '</b></div>' +
+        '<div class="fact"><span>Média de ' + esc(faixa) + ', mês inteiro</span><b>' + R(c.mediaAnteriores3) + '</b></div>';
+    }
+    html += '</div>';
+    if (c.mesmoPontoMesPassado == null) html += '<p class="hint">A comparação com os meses anteriores aparece quando houver gastos lançados neles.</p>';
+    // quanto sobrou de cada mês
+    html += '<h4 class="rv-sec">' + (meta > 0 ? 'Quanto sobrou dos ' + R(meta) : 'Total por mês') + '</h4><div class="mm-tab">' +
+      '<span class="h">Mês</span><span class="h r">Gastou</span><span class="h r">' + (meta > 0 ? 'Sobrou' : '') + '</span>' +
+      c.meses.slice().reverse().map((m) => {
+        const tem = m.lista.length > 0;
+        return '<span>' + esc(cap(nomeMes(m.mes, false))) + (m.mes === c.mes ? '<small>até agora</small>' : '') + '</span>' +
+          '<b>' + (tem ? R(m.total) : '—') + '</b>' +
+          '<b class="' + (m.sobra >= 0 ? 't-invest' : 'neg') + '">' + (tem && meta > 0 ? RS(m.sobra) : '') + '</b>';
+      }).join('') + '</div>';
+    // por categoria: mês atual x média dos 3 anteriores
+    if (c.anteriores.length) {
+      const cats = c.categorias.filter((x) => x.atual > 0.005 || x.media3 > 0.005);
+      const vsCat = (x) => (Math.abs(x.dif) < 0.005 ? '<em class="dif">igual</em>' : '<em class="dif ' + (x.dif > 0 ? 'mais' : 'menos') + '">' + (x.dif > 0 ? '▲ ' : '▼ ') + R(Math.abs(x.dif)) + '</em>');
+      html += '<h4 class="rv-sec">Por categoria: ' + esc(nomeAt) + ' x média de ' + esc(faixa) + '</h4><div class="mm-tab">' +
+        '<span class="h">Categoria</span><span class="h r">' + esc(cap(nomeAt).slice(0, 3)) + '.</span><span class="h r">x média</span>' +
+        cats.map((x) => '<span>' + esc(x.nome) + '</span><b>' + R(x.atual) + '</b><span class="r">' + vsCat(x) + '<small>média ' + R(x.media3) + '</small></span>').join('') + '</div>' +
+        '<p class="hint">' + esc(cap(nomeAt)) + ' ainda está em andamento; a média é do mês inteiro.</p>';
+    }
+    $('#mim-meses').innerHTML = html;
+  }
+
+  function renderFixos() {
+    const box = $('#mim-fixos'), res = $('#mim-fixos-resumo');
+    if (!S.loaded.fixos || !S.loaded.movs) { box.innerHTML = '<p class="hint">Carregando…</p>'; return; }
+    const mes = mesDe(hojeISO());
+    const meta = plano(S.cfg).meta;
+    const presos = fixosDoMes(S.fixos, S.movs, mes);
+    res.hidden = !S.fixos.length && !(presos > 0);
+    res.innerHTML = 'Fixos: <b>' + R(presos) + '</b>' + (meta > 0 ? ' dos ' + R(meta) + ' · livres <b class="' + (meta - presos < 0 ? 'neg' : 't-mine') + '">' + R(meta - presos) + '</b>' : '');
+    if (!S.fixos.length) {
+      box.innerHTML = '<p class="hint">Cadastre o que se repete todo mês, como academia, celular e streaming. Eles entram como gasto já no dia 1º e descontam' + (meta > 0 ? ' dos ' + R(meta) : '') + ' do mês.</p>';
+      return;
+    }
+    const nomeAt = nomeMes(mes, false);
+    const ord = S.fixos.slice().sort((a, b) => (a.ativo === false) - (b.ativo === false) || (Number(a.dia) || 0) - (Number(b.dia) || 0) || String(a.nome).localeCompare(String(b.nome)));
+    box.innerHTML = ord.map((f) => {
+      const ativo = f.ativo !== false;
+      const lancado = S.movs.some((m) => m.id === idFixoMes(f.id, mes));
+      const chips = [];
+      if (!ativo) chips.push('<span class="chip">desativado</span>');
+      if (lancado) chips.push('<span class="chip ok">já em ' + esc(nomeAt) + '</span>');
+      else if (ativo && (f.pulados || []).includes(mes)) chips.push('<span class="chip">fora de ' + esc(nomeAt) + '</span>');
+      else if (ativo && /^\d{4}-\d{2}$/.test(String(f.desde || '')) && f.desde > mes) chips.push('<span class="chip wait">começa em ' + esc(nomeMes(f.desde, false)) + '</span>');
+      const dia = Number(f.dia) || 1;
+      return '<div class="rv" data-fx="' + esc(f.id) + '">' +
+        '<div class="rv-head"><span class="rv-nome">' + esc(f.nome) + '</span><span class="rv-val' + (ativo ? '' : ' hint') + '">' + R(f.valor) + '</span></div>' +
+        '<div class="rv-sub"><span>todo dia ' + dia + (dia > 28 ? ' (ou o último)' : '') + ' · ' + esc(nomeCat(f.categoria)) + '</span>' + chips.join('') + '</div>' +
+        '<div class="row-actions"><button class="link" type="button" data-fxa="editar">Editar</button>' +
+        '<button class="link" type="button" data-fxa="ativo">' + (ativo ? 'Desativar' : 'Reativar') + '</button><span class="spacer"></span>' +
+        '<button class="link danger" type="button" data-fxa="excluir">' + (S.fxConfirmar === f.id ? 'Confirmar exclusão' : 'Excluir') + '</button></div></div>';
+    }).join('');
+  }
+  function marcarCatFixo(cat) {
+    S.fxCat = cat;
+    $$('#fx-cats button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.cat === cat)));
+  }
+  // f: o fixo que está sendo editado (sem ele, é um fixo novo)
+  function abrirFixo(f) {
+    const mes = mesDe(hojeISO());
+    S.fxEdit = f ? f.id : null;
+    $('#fx-nome').value = f ? f.nome || '' : '';
+    $('#fx-valor').value = f ? num2.format(Number(f.valor) || 0) : '';
+    $('#fx-dia').value = f ? String(Number(f.dia) || '') : '';
+    marcarCatFixo(f ? catValida(f.categoria) : null);
+    // num fixo novo, "já conta neste mês" vem marcado; editando, só aparece se o gasto deste mês ainda não entrou
+    const lancado = !!f && S.movs.some((m) => m.id === idFixoMes(f.id, mes));
+    $('#fx-agora').checked = !f;
+    $('#fx-agora').parentElement.hidden = lancado;
+    $('#fx-agora-txt').textContent = (f ? 'Lançar também em ' : 'Já conta em ') + nomeMes(mes, false);
+    $('#fx-salvar').textContent = f ? 'Salvar mudanças' : 'Salvar fixo';
+    $('#fx-erro').hidden = true;
+    $('#fx-form').hidden = false;
+    $('#fx-novo').hidden = true;
+    hintFixo();
+    rolar($('#fx-form'));
+    $('#fx-nome').focus();
+  }
+  function fecharFixo() {
+    S.fxEdit = null;
+    $('#fx-form').hidden = true;
+    $('#fx-novo').hidden = false;
+  }
+  function hintFixo() {
+    const mes = mesDe(hojeISO()), prox = addMes(mes, 1);
+    const f = S.fxEdit ? S.fixos.find((x) => x.id === S.fxEdit) : null;
+    const dia = Number($('#fx-dia').value.trim());
+    const quando = Number.isInteger(dia) && dia >= 1 && dia <= 31 ? ' (com a data do dia ' + dia + ')' : '';
+    const agora = !$('#fx-agora').parentElement.hidden && $('#fx-agora').checked;
+    let t;
+    if (f) {
+      const mov = S.movs.find((m) => m.id === idFixoMes(f.id, mes));
+      t = 'As mudanças valem a partir de ' + nomeMes(prox, false) + '.' +
+        (mov ? ' O gasto de ' + nomeMes(mes, false) + ' (' + R(mov.valor) + ') você muda no extrato, em Editar.' : agora ? ' E ele já entra em ' + nomeMes(mes, false) + '.' : '');
+    } else if (agora) t = 'Entra agora nos gastos de ' + nomeMes(mes, false) + '. Depois, todo mês, desconta já no dia 1º' + quando + '.';
+    else t = 'Começa em ' + nomeMes(prox, false) + '. Todo mês, desconta já no dia 1º' + quando + '.';
+    $('#fx-hint').textContent = t;
+  }
+  async function salvarFixo() {
+    const erro = (m) => { $('#fx-erro').textContent = m; $('#fx-erro').hidden = false; };
+    $('#fx-erro').hidden = true;
+    const nome = $('#fx-nome').value.trim();
+    const valor = parseNum($('#fx-valor').value);
+    const dia = Number($('#fx-dia').value.trim());
+    if (!nome) return erro('Dê um nome para o gasto fixo.');
+    if (!(valor > 0)) return erro('Coloque o valor por mês.');
+    if (!Number.isInteger(dia) || dia < 1 || dia > 31) return erro('O dia do mês vai de 1 a 31.');
+    const categoria = S.fxCat || 'outro';
+    const mes = mesDe(hojeISO()), prox = addMes(mes, 1);
+    const agora = new Date().toISOString();
+    const lancar = !$('#fx-agora').parentElement.hidden && $('#fx-agora').checked;
+    const ops = [];
+    let msg;
+    if (S.fxEdit) {
+      const f = S.fixos.find((x) => x.id === S.fxEdit);
+      if (!f) return erro('Esse gasto fixo não existe mais. Feche e tente de novo.');
+      const upd = { nome, valor: r2(valor), categoria, dia, atualizadoEm: agora };
+      const movId = idFixoMes(f.id, mes);
+      if (lancar && !S.movs.some((m) => m.id === movId)) {
+        // lançar também neste mês: passa a valer desde este mês e sai dos pulados
+        upd.desde = /^\d{4}-\d{2}$/.test(String(f.desde || '')) && f.desde < mes ? f.desde : mes;
+        upd.pulados = (f.pulados || []).filter((x) => x !== mes);
+        ops.push({ op: 'set', col: 'movimentos', id: movId, data: gastoDoFixo(Object.assign({}, f, upd), mes, agora) });
+      }
+      ops.unshift({ op: 'update', col: 'fixos', id: f.id, data: upd });
+      msg = ops.length > 1 ? nome + ' atualizado e lançado em ' + nomeMes(mes, false) + '.' : nome + ' atualizado. Vale a partir de ' + nomeMes(prox, false) + '.';
+    } else {
+      const id = S.db.collection('fixos').doc().id;
+      const doc = { nome, valor: r2(valor), categoria, dia, ativo: true, desde: lancar ? mes : prox, pulados: [], criadoEm: agora };
+      ops.push({ op: 'set', col: 'fixos', id, data: doc });
+      if (lancar) ops.push({ op: 'set', col: 'movimentos', id: idFixoMes(id, mes), data: gastoDoFixo(Object.assign({ id }, doc), mes, agora) });
+      msg = lancar ? nome + ' já entrou nos gastos de ' + nomeMes(mes, false) + '.' : nome + ' começa em ' + nomeMes(prox, false) + '.';
+    }
+    // o gasto e o fixo vão no mesmo pedido; a trava evita que o lançamento automático peça de novo
+    ops.filter((o) => o.col === 'movimentos').forEach((o) => fixosPedidos.add(o.id));
+    const btn = $('#fx-salvar');
+    btn.disabled = true;
+    try {
+      await S.db.lote(ops);
+      fecharFixo();
+      toast(msg);
+    } catch (e) { erro(msgErro(e)); } finally { btn.disabled = false; }
+  }
+
+  /* Lançamento automático dos fixos: no mês atual, ao abrir o app (com movimentos e fixos carregados),
+     cria o gasto de cada fixo ativo que ainda não entrou. Nunca meses passados nem futuros. */
+  const fixosPedidos = new Set(); // trava: gastos de fixo já pedidos nesta carga do app
+  let fixosTimer = null, fixosFalhas = 0, fixosEspera = 0;
+  function agendarFixos() {
+    clearTimeout(fixosTimer);
+    fixosTimer = setTimeout(lancarFixosDoMes, 400);
+  }
+  async function lancarFixosDoMes() {
+    if (!S.db || !S.loaded.movs || !S.loaded.fixos || fixosFalhas >= 3 || Date.now() < fixosEspera) return;
+    const mes = mesDe(hojeISO());
+    const ops = fixosParaLancar(S.fixos, S.movs, mes, new Date().toISOString()).filter((o) => !fixosPedidos.has(o.id));
+    if (!ops.length) return;
+    ops.forEach((o) => fixosPedidos.add(o.id));
+    try {
+      await S.db.lote(ops);
+      fixosFalhas = 0;
+      const tot = ops.reduce((a, o) => a + o.data.valor, 0);
+      toast((ops.length === 1 ? ops[0].data.descricao + ' entrou' : ops.length + ' gastos fixos entraram') + ' nos gastos de ' + nomeMes(mes, false) + ': ' + R(tot) + '.');
+    } catch (e) {
+      console.error(e);
+      ops.forEach((o) => fixosPedidos.delete(o.id));
+      fixosFalhas++;
+      fixosEspera = Date.now() + 60000;
+      if (fixosFalhas < 3) setTimeout(agendarFixos, 61000);
+      else toast('Não consegui lançar os gastos fixos de ' + nomeMes(mes, false) + '. Abra o app de novo mais tarde.');
+    }
+  }
+
+  /* Importar o extrato do Itaú: a leitura do PDF e a tela de revisão vêm de /extrato.js (carregado só aqui). */
+  // Limpa um elemento por fora do innerHTML: o redesenho que ignora HTML repetido não pode esconder uma revisão nova.
+  function limparEl(el) { el.replaceChildren(); delete el.__html; }
+  function fecharImportar() {
+    S.impN++; // uma revisão que ainda estiver aberta deixa de valer
+    S.importando = false;
+    limparEl($('#mim-importar'));
+    $('#mim-importar-status').hidden = true;
+    $('#mim-importar-card').hidden = true;
+  }
+  const erroClaro = (e, padrao) => (e instanceof Error && e.name === 'Error' && e.message ? e.message : padrao);
+  async function importarExtrato(arquivo) {
+    if (!arquivo) return;
+    if (!S.db || !S.loaded.movs || !S.loaded.fixos || !S.loaded.regras) { toast('Seus dados ainda estão abrindo. Tente de novo em instantes.'); return; }
+    fecharImportar();
+    const n = S.impN;
+    S.importando = true;
+    const card = $('#mim-importar-card'), topo = $('#mim-importar-topo'), st = $('#mim-importar-status'), box = $('#mim-importar');
+    const status = (txt, erro) => { st.textContent = txt; st.className = erro ? 'err' : 'hint'; st.hidden = !txt; topo.hidden = false; };
+    card.hidden = false;
+    status('Lendo o extrato…');
+    rolar(card);
+    try {
+      if (!/pdf$/i.test(arquivo.type || '') && !/\.pdf$/i.test(arquivo.name || '')) throw new Error('Esse arquivo não é PDF. Baixe o extrato da conta no app do Itaú, em PDF, e tente de novo.');
+      try { await carregarScript('/extrato.js?v=1'); } catch (e) { throw new Error('Não consegui abrir o leitor de extrato. Confira a internet e tente de novo.'); }
+      const ex = window.caixaExtrato;
+      if (!ex || typeof ex.ler !== 'function' || typeof ex.abrirRevisao !== 'function') throw new Error('O leitor de extrato não carregou direito. Recarregue o app e tente de novo.');
+      const lido = await ex.ler(arquivo);
+      if (n !== S.impN) return;
+      const lanc = lido && Array.isArray(lido.lancamentos) ? lido.lancamentos : [];
+      if (!lanc.length) throw new Error('Não achei lançamentos nesse extrato. Confira se é o PDF do extrato da conta do Itaú.');
+      // a revisão tem o próprio cabeçalho (período, conferência e aviso) e os botões de salvar e cancelar
+      topo.hidden = true;
+      const res = await ex.abrirRevisao({
+        lancamentos: lanc, periodo: lido.periodo || null, conferido: !!lido.conferido, aviso: lido.aviso || null,
+        movs: S.movs.slice(), fixos: S.fixos.slice(), regras: S.regras.slice(), categorias: CATS, container: box, salvar: salvarImportacao,
+      });
+      if (n !== S.impN) return;
+      fecharImportar();
+      if (!res) { toast('Importação cancelada. Nada foi salvo.'); return; }
+      const q = Number(res.importados) || 0;
+      toast(q ? q + (q === 1 ? ' lançamento importado.' : ' lançamentos importados.') : 'Nenhum lançamento novo para importar.');
+    } catch (e) {
+      console.error(e);
+      if (n !== S.impN) return;
+      S.importando = false;
+      limparEl(box);
+      status(erroClaro(e, 'Não consegui ler esse extrato. Confira se é o PDF do extrato da conta do Itaú e tente de novo.'), true);
+    }
+  }
+  /* Chamado pela revisão do extrato.js ao confirmar: grava tudo em lote (até 100 por pedido).
+     Se falhar, a revisão mostra o motivo e deixa tentar de novo; o que já foi salvo não duplica (ids fixos). */
+  async function salvarImportacao(movimentos, regrasNovas) {
+    const ops = opsImportacao(movimentos, regrasNovas, S.regras, new Date().toISOString());
+    if (!ops.length) return 0;
+    try {
+      await S.db.lote(ops);
+    } catch (e) {
+      console.error(e);
+      const c = e && e.code;
+      throw new Error(c === 'invalid_argument' && e.message && !['conflito', 'não existe'].includes(e.message) ? 'o servidor recusou: ' + e.message
+        : c === 'quota_exceeded' ? 'o espaço do app acabou'
+          : c === 'unauthenticated' ? 'é preciso entrar de novo com a senha'
+            : 'sem conexão com o servidor');
+    }
+    return ops.filter((o) => o.col === 'movimentos').length;
+  }
+
+  /* Relatório em PDF dos gastos (desenhado por relatorio.js). */
+  function dadosRelatorioGastos() {
+    const hoje = hojeISO();
+    const c = comparativoGastos(S.movs, plano(S.cfg).meta, hoje);
+    if (!c.meses.some((m) => m.total > 0)) return null;
+    return montarRelatorioGastos(c, hoje);
+  }
+  async function gerarRelatorioGastos(botao) {
+    const st = $('#rel-gastos-status');
+    st.hidden = true;
+    let d = null;
+    try { d = dadosRelatorioGastos(); } catch (e) { console.error(e); }
+    if (!d) { st.textContent = 'Ainda não há gastos para o relatório.'; st.hidden = false; return; }
+    const txt = botao.textContent;
+    botao.disabled = true; botao.textContent = 'Gerando…';
+    try {
+      await carregarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+      await carregarScript('/relatorio.js?v=2');
+      if (typeof window.caixaRelatorioGastosPDF !== 'function') throw new Error('relatorio.js sem caixaRelatorioGastosPDF');
+      const blob = window.caixaRelatorioGastosPDF(d);
+      const nome = 'relatorio-gastos-' + d.atual.mes + '.pdf';
+      const arquivo = new File([blob], nome, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+        try { await navigator.share({ files: [arquivo], title: d.titulo }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 60000);
+      st.textContent = 'PDF pronto: ' + nome; st.hidden = false;
+    } catch (e) {
+      console.error(e);
+      st.textContent = 'Não consegui gerar o PDF agora. Confira a internet e tente de novo.'; st.hidden = false;
+    } finally {
+      botao.disabled = false; botao.textContent = txt;
+    }
   }
 
   /* ---------- aba Ajustes ---------- */
@@ -4647,6 +5262,54 @@
   $('#cp-salvar').addEventListener('click', salvarCompra);
   $('#vd-salvar').addEventListener('click', salvarVenda);
   $('#mv-salvar').addEventListener('click', salvarMov);
+  // controle de gastos: importar extrato, relatório, gastos fixos
+  $('#btn-importar-extrato').addEventListener('click', () => {
+    if (S.importando) { rolar($('#mim-importar-card')); return; }
+    $('#extrato-arquivo').click();
+  });
+  $('#extrato-arquivo').addEventListener('change', (ev) => {
+    const arq = ev.target.files && ev.target.files[0];
+    ev.target.value = ''; // permite escolher o mesmo arquivo de novo
+    importarExtrato(arq);
+  });
+  $('#mim-importar-fechar').addEventListener('click', fecharImportar);
+  $('#btn-rel-gastos').addEventListener('click', (ev) => gerarRelatorioGastos(ev.currentTarget));
+  $('#fx-cats').innerHTML = CATS.map(([id, nome]) => '<button class="pill" type="button" data-cat="' + id + '" aria-pressed="false">' + nome + '</button>').join('');
+  $$('#fx-cats button').forEach((b) => b.addEventListener('click', () => marcarCatFixo(b.dataset.cat)));
+  $('#fx-novo').addEventListener('click', () => { S.fxConfirmar = null; abrirFixo(null); });
+  $('#fx-cancelar').addEventListener('click', fecharFixo);
+  $('#fx-salvar').addEventListener('click', salvarFixo);
+  $('#fx-dia').addEventListener('input', hintFixo);
+  $('#fx-agora').addEventListener('change', hintFixo);
+  $('#fx-valor').addEventListener('blur', () => { const v = parseNum($('#fx-valor').value); if (v > 0) $('#fx-valor').value = num2.format(v); });
+  $('#mim-fixos').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-fxa]');
+    if (!b) return;
+    const f = S.fixos.find((x) => x.id === b.closest('[data-fx]').dataset.fx);
+    if (!f) return;
+    const acao = b.dataset.fxa;
+    if (acao === 'editar') { S.fxConfirmar = null; abrirFixo(f); return; }
+    if (acao === 'excluir') {
+      if (S.fxConfirmar !== f.id) { S.fxConfirmar = f.id; renderFixos(); return; }
+      S.fxConfirmar = null;
+      try {
+        await S.db.doc('fixos/' + f.id).delete();
+        if (S.fxEdit === f.id) fecharFixo();
+        toast('Gasto fixo excluído. Os gastos já lançados continuam no extrato.');
+      } catch (e) { toast(msgErro(e)); }
+      return;
+    }
+    if (acao === 'ativo') {
+      const novo = f.ativo === false;
+      b.disabled = true;
+      try {
+        await S.db.doc('fixos/' + f.id).update({ ativo: novo, atualizadoEm: new Date().toISOString() });
+        toast(novo ? f.nome + ' reativado.' : f.nome + ' desativado. Os gastos já lançados continuam.');
+      } catch (e) { toast(msgErro(e)); } finally { b.disabled = false; }
+    }
+  });
+  // ao voltar para o app (pode ter virado o mês), confere se falta lançar algum fixo
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') agendarFixos(); });
   /* Rosca: passar o mouse (ou tocar) numa fatia mostra o nome e a porcentagem no meio, e destaca a linha da lista */
   function focoRosca(k) {
     const box = $('#pat-divisao');
@@ -4721,12 +5384,24 @@
       try { await S.db.doc('aportes/' + id).delete(); toast('Desfeito. O valor voltou para o seu saldo.'); } catch (e) { toast(msgErro(e)); }
       return;
     }
+    const ed = ev.target.closest('[data-mov-edit]');
+    if (ed) {
+      const m = S.movs.find((x) => x.id === ed.dataset.movEdit);
+      if (m) { S.confirmarMov = null; abrirMov(m.tipo, m); }
+      return;
+    }
     const btn = ev.target.closest('[data-mov]');
     if (!btn) return;
     const id = btn.dataset.mov;
     if (S.confirmarMov !== id) { S.confirmarMov = id; renderExtrato(); return; }
     S.confirmarMov = null;
-    try { await S.db.doc('movimentos/' + id).delete(); toast('Lançamento excluído.'); } catch (e) { toast(msgErro(e)); }
+    // gasto de um fixo: no mesmo pedido, o mês entra nos pulados do fixo para não ser lançado de novo
+    const m = S.movs.find((x) => x.id === id) || { id };
+    const ops = opsExcluirMov(m, S.fixos);
+    try {
+      await S.db.lote(ops);
+      toast(ops.length > 1 ? 'Lançamento excluído. Esse gasto fixo não volta em ' + nomeMes(mesDoFixo(m), false) + '.' : 'Lançamento excluído.');
+    } catch (e) { toast(msgErro(e)); }
   });
 
   $('#dist-valor').addEventListener('input', () => { S.distTocado = true; });
@@ -4980,6 +5655,18 @@
       S.movs = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
       S.loaded.movs = true;
       render();
+      agendarFixos();
+    }, falhou);
+    db.collection('fixos').onSnapshot((snap) => {
+      S.fixos = snap.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => String(a.criadoEm).localeCompare(String(b.criadoEm)));
+      S.loaded.fixos = true;
+      if (S.fxConfirmar && !S.fixos.some((f) => f.id === S.fxConfirmar)) S.fxConfirmar = null;
+      render();
+      agendarFixos();
+    }, falhou);
+    db.collection('regras').onSnapshot((snap) => {
+      S.regras = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
+      S.loaded.regras = true;
     }, falhou);
     db.doc('mercado/atual').onSnapshot((snap) => {
       S.mercado = snap.exists ? snap.data() : null;
