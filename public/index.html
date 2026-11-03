@@ -422,6 +422,14 @@
   .cat-total b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; }
   .cat-total small { color: var(--muted); font-size: .82rem; }
   .cats { display: flex; flex-direction: column; gap: 10px; }
+  /* card de gastos: mês escolhido, gráfico clicável, categoria que filtra a lista */
+  .mim-mes h3 { flex: 1; text-align: center; }
+  .iconbtn:disabled { opacity: .35; cursor: default; }
+  .chart [data-mes], .mm-tab [data-mes], .cats [data-cat] { cursor: pointer; }
+  .cats [aria-pressed="true"] { background: var(--surface-2); box-shadow: 0 0 0 5px var(--surface-2); border-radius: 4px; }
+  .mm-mes { border: 0; background: none; padding: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+  #mim-meses > .rv-sec:first-child { margin-top: 0; }
+  .mim-lista .row-val .link { padding: 2px 0 0 10px; font-weight: 400; }
   .pj-hero { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
   .pj-hero > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .pj-hero .big { font-size: 1.4rem; }
@@ -755,7 +763,11 @@
     </div>
 
     <div class="card" id="mim-gastos-card" hidden>
-      <h3 id="mim-gastos-titulo">Gastos do mês</h3>
+      <div class="monthbar mim-mes">
+        <button class="iconbtn" id="mim-mes-ant" type="button" aria-label="Mês anterior">‹</button>
+        <h3 id="mim-gastos-titulo" aria-live="polite">Gastos do mês</h3>
+        <button class="iconbtn" id="mim-mes-prox" type="button" aria-label="Próximo mês">›</button>
+      </div>
       <div class="panel" id="mim-gastos"></div>
     </div>
 
@@ -1729,6 +1741,7 @@
     idxSel: 'ibovespa', idxPer: 'YTD',
     confirmarRv: null, confirmarMov: null, vendaId: null, movTipo: 'gasto', movCat: null,
     tab: 'mes', mes: mesDe(hojeISO()),
+    mimMes: mesDe(hojeISO()), mimCat: null, // mês e categoria escolhidos no card de gastos da aba Para mim
     form: { tipo: 'adiantamento', editId: null, mimTocado: false, criadoEm: null },
     confirmar: null,
     proj: { view: 'parado', anos: 5, plano: true, cdi: 'hoje' },
@@ -4149,16 +4162,48 @@
       '</div><p class="hint">' + (valeu ? 'Vale a pena: a revenda ganha do CDI por ' + R(lucro - cdiGanho) + '.' : 'Não compensa: deixar no CDI renderia ' + R(cdiGanho - lucro) + ' a mais.') + '</p>';
   }
 
+  // nome do mês no card de gastos: com o ano só quando não é o ano atual
+  const nomeMesMim = (m) => nomeMes(m, false) + (m.slice(0, 4) === hojeISO().slice(0, 4) ? '' : ' de ' + m.slice(0, 4));
+  /* Meses que dá para ver no card de gastos: do mês do primeiro gasto até o mês atual. */
+  function limitesMimMes() {
+    const atual = mesDe(hojeISO());
+    const primeiro = S.movs.reduce((p, m) => (m.tipo === 'gasto' && /^\d{4}-\d{2}-\d{2}$/.test(String(m.data || '')) && mesDe(m.data) < p ? mesDe(m.data) : p), atual);
+    return { primeiro, atual };
+  }
+  // troca o mês do card de gastos (fora dos limites não faz nada) e limpa o filtro de categoria
+  function mudarMimMes(m) {
+    const { primeiro, atual } = limitesMimMes();
+    if (!/^\d{4}-\d{2}$/.test(String(m)) || m < primeiro || m > atual || m === S.mimMes) return;
+    S.mimMes = m;
+    S.mimCat = null;
+    renderGastos();
+  }
   function renderGastos() {
     const card = $('#mim-gastos-card');
-    const mes = mesDe(hojeISO());
-    const ant = addMes(mes, -1);
-    const doMes = (m) => S.movs.filter((x) => x.tipo === 'gasto' && mesDe(x.data) === m);
-    const porCatDe = (lista) => { const o = {}; lista.forEach((m) => { const c = m.categoria || 'outro'; o[c] = (o[c] || 0) + (Number(m.valor) || 0); }); return o; };
-    const lista = doMes(mes);
-    if (!lista.length) { card.hidden = true; return; }
+    const box = $('#mim-gastos');
+    if (!S.movs.some((x) => x.tipo === 'gasto')) { card.hidden = true; return; }
     card.hidden = false;
-    $('#mim-gastos-titulo').textContent = 'Gastos de ' + nomeMes(mes, false);
+    const { primeiro, atual } = limitesMimMes();
+    // o mês escolhido pode ter saído dos limites (ex.: apagou os gastos do primeiro mês)
+    if (!(S.mimMes >= primeiro && S.mimMes <= atual)) { S.mimMes = S.mimMes > atual ? atual : primeiro; S.mimCat = null; }
+    const mes = S.mimMes;
+    const ehAtual = mes === atual;
+    const ant = addMes(mes, -1);
+    $('#mim-mes-ant').disabled = mes <= primeiro;
+    $('#mim-mes-prox').disabled = mes >= atual;
+    $('#mim-gastos-titulo').textContent = 'Gastos de ' + nomeMesMim(mes);
+    const catDe = (m) => m.categoria || 'outro';
+    const doMes = (m) => S.movs.filter((x) => x.tipo === 'gasto' && mesDe(x.data) === m);
+    const porCatDe = (lista) => { const o = {}; lista.forEach((m) => { const c = catDe(m); o[c] = (o[c] || 0) + (Number(m.valor) || 0); }); return o; };
+    const lista = doMes(mes);
+    const meta = plano(S.cfg).meta;
+    // gráfico dos 6 meses que terminam no mês escolhido; tocar numa barra escolhe aquele mês
+    const meses = [];
+    for (let i = 5; i >= 0; i--) { const r = resumoGastosMes(S.movs, addMes(mes, -i)); r.sobra = r2(meta - r.total); meses.push(r); }
+    const graf = !meses.some((m) => m.total > 0) ? '' : '<div class="chart" id="mim-gastos-graf">' + graficoMeses({ meta, meses }, mes) + '</div>' +
+      '<div class="chart-legend"><span><i class="sw" style="background:var(--c2)"></i>Fixos</span><span><i class="sw" style="background:var(--mine)"></i>Variáveis</span>' +
+      (meta > 0 ? '<span><i class="sw" style="background:var(--danger)"></i>Acima do limite</span><span><i class="ln dash"></i>Limite de ' + R(meta) + '</span>' : '') + '</div>';
+    if (!lista.length) { box.innerHTML = '<p class="hint">Nenhum gasto em ' + esc(nomeMesMim(mes)) + '.</p>' + graf; return; }
     const porCat = porCatDe(lista);
     const porCatAnt = porCatDe(doMes(ant));
     const total = Object.values(porCat).reduce((a, v) => a + v, 0);
@@ -4167,7 +4212,6 @@
     const cats = Array.from(new Set([...Object.keys(porCat), ...Object.keys(porCatAnt)]));
     const linhas = cats.map((c) => [c, porCat[c] || 0, porCatAnt[c] || 0]).sort((a, b) => b[1] - a[1] || b[2] - a[2]);
     const maior = Math.max(...linhas.map((l) => l[1]), 1);
-    const meta = plano(S.cfg).meta;
     const nomeAnt = nomeMes(ant, false);
     const dif = (v, a) => {
       if (!(a > 0)) return '<em class="dif novo">novo</em>';
@@ -4177,16 +4221,36 @@
     };
     let html = '<div class="cat-total"><b>' + R(total) + '</b><small>' + (meta > 0 ? 'de ' + R(meta) + ' que ficam com você no mês' : '') + '</small></div>';
     if (meta > 0) html += '<div class="meter" aria-hidden="true"><i style="width:' + Math.min(100, total / meta * 100).toFixed(1) + '%;background:' + (total > meta ? 'var(--danger)' : 'var(--mine)') + '"></i></div>';
-    // aviso a partir de 80% do valor do mês; vermelho ao chegar no limite
-    const av = avisoGastosMes(total, meta, hojeISO());
-    if (av) html += '<p class="aviso-gastos' + (av.nivel >= 100 ? ' ruim' : '') + '" role="status">' + esc(av.texto) + '</p>';
+    if (ehAtual) {
+      // aviso a partir de 80% do valor do mês; vermelho ao chegar no limite (só no mês atual)
+      const av = avisoGastosMes(total, meta, hojeISO());
+      if (av) html += '<p class="aviso-gastos' + (av.nivel >= 100 ? ' ruim' : '') + '" role="status">' + esc(av.texto) + '</p>';
+    } else if (meta > 0) {
+      const sobra = r2(meta - total);
+      html += '<p class="hint">' + (sobra >= 0 ? 'Sobrou <b class="t-invest">' + R(sobra) + '</b> dos ' + R(meta) + '.' : 'Passou <b class="neg">' + R(-sobra) + '</b> do limite de ' + R(meta) + '.') + '</p>';
+    }
     const fixosMes = r2(lista.filter((m) => m.fixoId).reduce((a, m) => a + (Number(m.valor) || 0), 0));
     if (fixosMes > 0) html += '<p class="hint">Inclui ' + R(fixosMes) + ' de gastos fixos.</p>';
     if (passado > 0) html += '<p class="hint cat-vs">Contra ' + esc(nomeAnt) + ' inteiro (' + R(passado) + '): ' + dif(total, passado) + '</p>';
+    html += graf;
+    // tocar numa categoria (com gasto no mês) filtra a lista abaixo; tocar de novo limpa
+    if (S.mimCat && !(porCat[S.mimCat] > 0)) S.mimCat = null;
     html += '<div class="cats">' + linhas.map(([c, v, a]) =>
-      '<div class="cat-row"><span>' + esc(nomeCat(c)) + '</span><span class="cmp-bar"><i style="width:' + (v / maior * 100).toFixed(1) + '%;background:var(--mine)"></i></span>' +
+      '<div class="cat-row"' + (v > 0 ? ' data-cat="' + esc(c) + '" role="button" tabindex="0" aria-pressed="' + (S.mimCat === c) + '"' : '') + '><span>' + esc(nomeCat(c)) + '</span><span class="cmp-bar"><i style="width:' + (v / maior * 100).toFixed(1) + '%;background:var(--mine)"></i></span>' +
       '<b>' + R(v) + '<small>' + (passado > 0 ? dif(v, a) : pct1.format(total ? v / total : 0)) + '</small></b></div>').join('') + '</div>';
-    $('#mim-gastos').innerHTML = html;
+    // o que gastou no mês, do mais recente ao mais antigo (Editar e Excluir iguais aos do extrato)
+    const ord = lista.filter((m) => !S.mimCat || catDe(m) === S.mimCat)
+      .sort((a, b) => (String(b.data) + (b.criadoEm || '')).localeCompare(String(a.data) + (a.criadoEm || '')));
+    html += '<h4 class="rv-sec">O que você gastou em ' + esc(nomeMesMim(mes)) + '</h4>' +
+      (S.mimCat ? '<p class="hint">Mostrando só ' + esc(nomeCat(S.mimCat)) + ' · <button class="link" type="button" data-mim-cat-limpar>limpar</button></p>' : '<p class="hint">Toque numa categoria para ver só os gastos dela.</p>') +
+      '<div class="rows mim-lista">' + ord.map((m) => {
+        const nome = nomeCat(catDe(m));
+        const marca = m.fixoId ? 'Gasto fixo' : m.origem === 'extrato' ? 'Do extrato' : '';
+        return '<div class="row"><span class="row-name">' + esc(m.descricao ? nome + ': ' + m.descricao : nome) + '<small>' + esc(dataCurta(m.data)) + (marca ? ' · ' + marca : '') + '</small></span>' +
+          '<span class="row-val">' + R(m.valor) + '<small><button class="link" type="button" data-mov-edit="' + esc(m.id) + '">Editar</button>' +
+          '<button class="link danger" type="button" data-mov-del="' + esc(m.id) + '">' + (S.confirmarMov === m.id ? 'Confirmar' : 'Excluir') + '</button></small></span></div>';
+      }).join('') + '</div>';
+    box.innerHTML = html;
   }
   function renderExtrato() {
     const box = $('#mim-extrato');
@@ -4656,8 +4720,10 @@
   }
 
   /* ---------- controle de gastos: tela (mês a mês, fixos, importação do extrato e relatório) ---------- */
-  /* Barras dos últimos 6 meses: fixos embaixo, variáveis em cima, o que passou do limite em vermelho e a linha do limite. */
-  function graficoMeses(c) {
+  /* Barras dos últimos 6 meses: fixos embaixo, variáveis em cima, o que passou do limite em vermelho e a linha do limite.
+     destaque (opcional, 'AAAA-MM'): esse mês fica forte, os outros mais claros, e cada coluna ganha uma área de toque com data-mes.
+     Sem destaque, o último mês fica forte e não há área de toque. */
+  function graficoMeses(c, destaque) {
     const W = 360, H = 180, mt = 18, mb = 20, ml = 2, mr = 2;
     const n = c.meses.length;
     const max = Math.max(c.meta * 1.08, ...c.meses.map((m) => m.total), 1);
@@ -4667,17 +4733,23 @@
     const ret = (x, y1, y2, cor) => (y2 - y1 > 0.2 ? '<rect x="' + x.toFixed(1) + '" y="' + y1.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (y2 - y1).toFixed(1) + '" rx="2" fill="' + cor + '"></rect>' : '');
     let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="Gastos dos últimos 6 meses e o limite do mês">' +
       '<line x1="0" x2="' + W + '" y1="' + y0.toFixed(1) + '" y2="' + y0.toFixed(1) + '" stroke="var(--line)"></line>';
+    let toques = '';
     c.meses.forEach((m, i) => {
       const x = ml + slot * i + (slot - bw) / 2, cx = (x + bw / 2).toFixed(1);
       const yF = Y(m.fixos), yT = Y(m.total);
       const passou = c.meta > 0 && m.total > c.meta;
+      const forte = destaque ? m.mes === destaque : i === n - 1;
+      const claro = !!destaque && !forte;
+      if (claro) svg += '<g opacity=".4">';
       svg += ret(x, yF, y0, 'var(--c2)') + ret(x, yT, yF, 'var(--mine)');
       if (passou) svg += ret(x, yT, Y(c.meta), 'var(--danger)');
       if (m.total > 0) svg += '<text class="lbl" x="' + cx + '" y="' + (yT - 5).toFixed(1) + '" text-anchor="middle"' + (passou ? ' style="fill:var(--danger)"' : '') + '>' + esc(compact.format(m.total)) + '</text>';
-      svg += '<text class="' + (i === n - 1 ? 'lbl lbl-strong' : 'lbl') + '" x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle">' + esc(nomeMes(m.mes, false).slice(0, 3)) + '</text>';
+      if (claro) svg += '</g>';
+      svg += '<text class="' + (forte ? 'lbl lbl-strong' : 'lbl') + '" x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle">' + esc(nomeMes(m.mes, false).slice(0, 3)) + '</text>';
+      if (destaque) toques += '<rect data-mes="' + esc(m.mes) + '" x="' + (ml + slot * i).toFixed(1) + '" y="0" width="' + slot.toFixed(1) + '" height="' + H + '" fill="transparent"><title>' + esc(cap(nomeMes(m.mes, false))) + '</title></rect>';
     });
     if (c.meta > 0) { const ym = Y(c.meta).toFixed(1); svg += '<line x1="0" x2="' + W + '" y1="' + ym + '" y2="' + ym + '" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="4 3"></line>'; }
-    return svg + '</svg>';
+    return svg + toques + '</svg>';
   }
   function renderMeses() {
     const card = $('#mim-meses-card');
@@ -4693,11 +4765,8 @@
       if (Math.abs(d) < 0.005) return '<em class="dif">igual</em>';
       return '<em class="dif ' + (d > 0 ? 'mais' : 'menos') + '">' + (d > 0 ? '▲ ' : '▼ ') + R(Math.abs(d)) + (d > 0 ? ' a mais' : ' a menos') + ' neste mês</em>';
     };
-    let html = '<div class="chart" id="mim-meses-graf">' + graficoMeses(c) + '</div>' +
-      '<div class="chart-legend"><span><i class="sw" style="background:var(--c2)"></i>Fixos</span><span><i class="sw" style="background:var(--mine)"></i>Variáveis</span>' +
-      (meta > 0 ? '<span><i class="sw" style="background:var(--danger)"></i>Acima do limite</span><span><i class="ln dash"></i>Limite de ' + R(meta) + '</span>' : '') + '</div>';
-    // comparação justa: até o mesmo dia
-    html += '<h4 class="rv-sec">' + esc(cap(nomeAt)) + ' até o dia ' + c.dia + '</h4><div class="facts">' +
+    // comparação justa: até o mesmo dia (o gráfico dos 6 meses fica no card de gastos, em renderGastos)
+    let html = '<h4 class="rv-sec">' + esc(cap(nomeAt)) + ' até o dia ' + c.dia + '</h4><div class="facts">' +
       '<div class="fact"><span>Você gastou<small>Os fixos contam desde o dia 1º</small></span><b>' + R(c.ateHoje) + '</b></div>';
     if (c.mesmoPontoMesPassado != null) html += '<div class="fact"><span>No mesmo ponto de ' + esc(nomeAnt) + '<small>' + vs(c.ateHoje, c.mesmoPontoMesPassado) + '</small></span><b>' + R(c.mesmoPontoMesPassado) + '</b></div>';
     if (c.mediaMesmoPonto3 != null) {
@@ -4706,14 +4775,17 @@
     }
     html += '</div>';
     if (c.mesmoPontoMesPassado == null) html += '<p class="hint">A comparação com os meses anteriores aparece quando houver gastos lançados neles.</p>';
-    // quanto sobrou de cada mês
+    // quanto sobrou de cada mês; tocar no mês abre esse mês no card de gastos
+    const { primeiro } = limitesMimMes();
     html += '<h4 class="rv-sec">' + (meta > 0 ? 'Quanto sobrou dos ' + R(meta) : 'Total por mês') + '</h4><div class="mm-tab">' +
       '<span class="h">Mês</span><span class="h r">Gastou</span><span class="h r">' + (meta > 0 ? 'Sobrou' : '') + '</span>' +
       c.meses.slice().reverse().map((m) => {
         const tem = m.lista.length > 0;
-        return '<span>' + esc(cap(nomeMes(m.mes, false))) + (m.mes === c.mes ? '<small>até agora</small>' : '') + '</span>' +
-          '<b>' + (tem ? R(m.total) : '—') + '</b>' +
-          '<b class="' + (m.sobra >= 0 ? 't-invest' : 'neg') + '">' + (tem && meta > 0 ? RS(m.sobra) : '') + '</b>';
+        const ir = m.mes >= primeiro ? ' data-mes="' + esc(m.mes) + '"' : '';
+        const nome = esc(cap(nomeMes(m.mes, false)));
+        return '<span' + ir + '>' + (ir ? '<button class="mm-mes" type="button" aria-label="Ver os gastos de ' + esc(nomeMesMim(m.mes)) + '">' + nome + '</button>' : nome) + (m.mes === c.mes ? '<small>até agora</small>' : '') + '</span>' +
+          '<b' + ir + '>' + (tem ? R(m.total) : '—') + '</b>' +
+          '<b' + ir + ' class="' + (m.sobra >= 0 ? 't-invest' : 'neg') + '">' + (tem && meta > 0 ? RS(m.sobra) : '') + '</b>';
       }).join('') + '</div>';
     // por categoria: mês atual x média dos 3 anteriores
     if (c.anteriores.length) {
@@ -5375,6 +5447,28 @@
       try { await S.db.doc('revendas/' + id).delete(); toast('Revenda excluída.'); } catch (e) { toast(msgErro(e)); }
     }
   });
+  /* Editar e Excluir (com confirmação) de um lançamento: no extrato e na lista de gastos do mês.
+     Na lista de gastos o Excluir usa data-mov-del, porque [data-mov] marca a "linha nova" das animações e fica só no extrato. */
+  async function acaoMov(ev) {
+    const ed = ev.target.closest('[data-mov-edit]');
+    if (ed) {
+      const m = S.movs.find((x) => x.id === ed.dataset.movEdit);
+      if (m) { S.confirmarMov = null; abrirMov(m.tipo, m); }
+      return;
+    }
+    const btn = ev.target.closest('[data-mov], [data-mov-del]');
+    if (!btn) return;
+    const id = btn.dataset.mov || btn.dataset.movDel;
+    if (S.confirmarMov !== id) { S.confirmarMov = id; renderExtrato(); renderGastos(); return; }
+    S.confirmarMov = null;
+    // gasto de um fixo: no mesmo pedido, o mês entra nos pulados do fixo para não ser lançado de novo
+    const m = S.movs.find((x) => x.id === id) || { id };
+    const ops = opsExcluirMov(m, S.fixos);
+    try {
+      await S.db.lote(ops);
+      toast(ops.length > 1 ? 'Lançamento excluído. Esse gasto fixo não volta em ' + nomeMes(mesDoFixo(m), false) + '.' : 'Lançamento excluído.');
+    } catch (e) { toast(msgErro(e)); }
+  }
   $('#mim-extrato').addEventListener('click', async (ev) => {
     const ap = ev.target.closest('[data-ap]');
     if (ap) {
@@ -5384,24 +5478,35 @@
       try { await S.db.doc('aportes/' + id).delete(); toast('Desfeito. O valor voltou para o seu saldo.'); } catch (e) { toast(msgErro(e)); }
       return;
     }
-    const ed = ev.target.closest('[data-mov-edit]');
-    if (ed) {
-      const m = S.movs.find((x) => x.id === ed.dataset.movEdit);
-      if (m) { S.confirmarMov = null; abrirMov(m.tipo, m); }
-      return;
-    }
-    const btn = ev.target.closest('[data-mov]');
-    if (!btn) return;
-    const id = btn.dataset.mov;
-    if (S.confirmarMov !== id) { S.confirmarMov = id; renderExtrato(); return; }
-    S.confirmarMov = null;
-    // gasto de um fixo: no mesmo pedido, o mês entra nos pulados do fixo para não ser lançado de novo
-    const m = S.movs.find((x) => x.id === id) || { id };
-    const ops = opsExcluirMov(m, S.fixos);
-    try {
-      await S.db.lote(ops);
-      toast(ops.length > 1 ? 'Lançamento excluído. Esse gasto fixo não volta em ' + nomeMes(mesDoFixo(m), false) + '.' : 'Lançamento excluído.');
-    } catch (e) { toast(msgErro(e)); }
+    await acaoMov(ev);
+  });
+  /* card de gastos: mês anterior/próximo, barra do gráfico, filtro por categoria e Editar/Excluir da lista */
+  const filtrarMimCat = (c) => { S.mimCat = S.mimCat === c ? null : c; renderGastos(); };
+  $('#mim-mes-ant').addEventListener('click', () => mudarMimMes(addMes(S.mimMes, -1)));
+  $('#mim-mes-prox').addEventListener('click', () => mudarMimMes(addMes(S.mimMes, 1)));
+  $('#mim-gastos').addEventListener('click', async (ev) => {
+    const barra = ev.target.closest('[data-mes]');
+    if (barra) { mudarMimMes(barra.dataset.mes); return; }
+    if (ev.target.closest('[data-mim-cat-limpar]')) { S.mimCat = null; renderGastos(); return; }
+    const cat = ev.target.closest('[data-cat]');
+    if (cat) { filtrarMimCat(cat.dataset.cat); return; }
+    await acaoMov(ev);
+  });
+  $('#mim-gastos').addEventListener('keydown', (ev) => {
+    const cat = ev.target.closest('[data-cat]');
+    if (!cat || (ev.key !== 'Enter' && ev.key !== ' ')) return;
+    ev.preventDefault();
+    const c = cat.dataset.cat;
+    filtrarMimCat(c);
+    const el = $$('#mim-gastos [data-cat]').find((x) => x.dataset.cat === c);
+    if (el) el.focus();
+  });
+  // tabela "Quanto sobrou" (Mês a mês): abre o mês no card de gastos e rola até ele
+  $('#mim-meses').addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-mes]');
+    if (!t) return;
+    mudarMimMes(t.dataset.mes);
+    rolar($('#mim-gastos-card'));
   });
 
   $('#dist-valor').addEventListener('input', () => { S.distTocado = true; });
