@@ -6,9 +6,11 @@ controlar revendas e acompanhar o patrimônio todo dia.
 ## Como funciona
 
 - `public/index.html` — o app inteiro (uma página).
+- `public/relatorio.js` — os relatórios em PDF (semana/mês e "Meus gastos"), desenhados no aparelho com o jsPDF.
+- `public/extrato.js` — leitura do extrato do Itaú em PDF, no próprio aparelho. Veja [Controle de gastos](#controle-de-gastos-para-mim).
 - `api/` — funções da Vercel:
   - `login` — entra com a senha (`APP_PASSWORD`) e guarda a sessão por um ano;
-  - `estado` / `escrever` — leem e gravam os dados num arquivo JSON privado do Vercel Blob;
+  - `estado` / `escrever` — leem e gravam os dados num arquivo JSON privado do Vercel Blob. Ao gravar um gasto, `escrever` também confere o aviso de 80%/100% do mês (`api/_alertasGastos.js`);
   - `importar` — restaura um backup;
   - `mercado` — busca dólar PTAX, CDI, Selic e IPCA no Banco Central e guarda o fechamento diário dos índices de mercado. Roda sozinho todo dia útil às 18h (cron em `vercel.json`) e também quando o app abre com os dados velhos;
   - `indices` — cotação dos índices de mercado na hora (gráficos, resumo do dia e destaques da semana). Veja [Índices de mercado](#índices-de-mercado).
@@ -124,6 +126,88 @@ cada índice, para o app usar sem a API ao vivo), `indicesAtualizadoEm` (ISO da 
 e `indicesErro` (mensagem da última falha, ou `null` quando todos vieram). O retorno de `/api/mercado`
 traz também `falhasIndices: { <id>: mensagem }`.
 
+## Controle de gastos (Para mim)
+
+Na aba Para mim, os gastos do mês são comparados com o valor que fica com você no mês (Ajustes,
+`config.main.paraMim`), chamado aqui de **meta**. O mês é o mês da data do gasto, no
+horário de Brasília. Gastos fixos e gastos importados do extrato contam como qualquer outro gasto.
+
+### Aviso de 80% e de 100%
+
+- **No app:** o card de gastos do mês avisa quando os gastos chegam a 80% da meta e quando passam dela.
+- **No celular:** quando um gasto é gravado (`/api/escrever`), o servidor recalcula o mês atual. Se chegou a
+  80% ou passou de 100%, manda uma notificação para os aparelhos inscritos. Tocar nela abre a aba Para mim
+  (`/?aba=mim`).
+  - 80%: *"Para mim: 80% usado. Você já gastou R$ 880,00 dos R$ 1.100,00 de novembro. Sobram R$ 220,00 para 27 dias."*
+  - 100%: *"Para mim: limite passou. Você gastou R$ 1.130,00 em novembro, R$ 30,00 acima dos R$ 1.100,00."*
+- 80% vale a partir de 80% da meta, e 100% quando os gastos passam da meta (chegar exatamente à meta ainda é 80%).
+- Cada faixa sai **uma vez por mês**. Fica marcada em `enviados` de `caixa/push.json` com a chave
+  `gastos:AAAA-MM:80` ou `gastos:AAAA-MM:100`. Apagar um gasto e lançar de novo não repete o aviso.
+- Se os gastos pularem de menos de 80% direto para mais de 100%, sai só o aviso de 100% (o de 80% fica marcado também).
+- Só vale para o mês atual: gasto lançado num mês passado não dispara aviso. Sem meta (0), não há aviso.
+- Se nenhum aparelho estiver inscrito ou o envio não chegar a nenhum, o aviso não é marcado e é tentado de novo
+  na próxima gravação de gasto. Um erro na notificação vai só para o log: a gravação vale do mesmo jeito.
+
+### Gastos fixos
+
+- Ficam na coleção `fixos` (descrição, categoria e valor de cada conta que se repete todo mês).
+- Cada fixo entra como gasto (`tipo: 'gasto'`, `fixoId`) com data do **dia 1º do mês**, e já desconta da meta desde o começo do mês.
+- O id do gasto é sempre `fixo-<id do fixo>-<AAAA-MM>`. Lançar de novo, por outro aparelho ou outra aba, grava
+  o mesmo documento, então o fixo não duplica.
+- Apagar o gasto do fixo num mês marca aquele mês como **pulado** no fixo: o app não lança de novo naquele mês,
+  e os meses seguintes continuam normais.
+
+### Importar extrato do Itaú (PDF)
+
+- O PDF é lido **no próprio aparelho** com o pdf.js (`public/extrato.js`). Ele não é enviado para o servidor nem guardado. Só as linhas que você confirma viram gastos.
+- Antes de gravar, aparece a lista de linhas para revisar. Linhas que não são gasto (entradas, transferências
+  entre contas suas, pagamento de fatura, aplicações e resgates) vêm ignoradas por padrão. Linhas sem
+  categoria conhecida ficam marcadas para revisar.
+- **Regras de categoria aprendidas:** quando você escolhe a categoria de uma descrição, o app grava uma regra na
+  coleção `regras` e usa essa categoria nas próximas importações.
+- **A mesma linha não entra duas vezes:** cada linha gera uma chave fixa (`chaveExtrato`), e o gasto é gravado
+  com um id que sai dessa chave. Importar o mesmo extrato de novo, ou um extrato com dias repetidos, não duplica nada.
+
+### Comparação mês a mês e relatório "Meus gastos"
+
+- O mês atual **até hoje** é comparado com o mesmo ponto do mês passado (até o mesmo dia) e com a média dos
+  3 meses anteriores, no total e por categoria.
+- O relatório em PDF **"Meus gastos"** é gerado no aparelho (`window.caixaRelatorioGastosPDF(d)` em
+  `public/relatorio.js`, que devolve um `Blob`) e traz:
+  - os destaques;
+  - o gráfico dos últimos 6 meses (fixos e variáveis), com a linha da meta e em vermelho os meses acima dela;
+  - quanto sobrou em cada mês;
+  - a comparação do mês atual;
+  - a tabela por categoria (este mês, média de 3 meses e diferença);
+  - os 10 maiores gastos do mês.
+
+  Campos sem valor (`null`) aparecem como "—".
+
+Dados que a tela passa para o relatório:
+
+```js
+{
+  titulo: 'Meus gastos · nov. de 2026', ate: '2026-11-03', meta: 1100,
+  meses: [{ mes: '2026-06', nome: 'jun. de 2026', total, fixos, variaveis, sobra /* meta − total */, porCat: [{ id, nome, v }] }], // 6 meses, do mais antigo ao atual
+  atual: { mes, nome, total, ateDia, mesmoPontoMesPassado /* ou null */, mediaAnteriores3 /* ou null */ },
+  categorias: [{ id, nome, atual, media3, dif }],
+  maiores: [{ data, descricao, categoria, valor }],
+  destaques: ['texto curto']
+}
+```
+
+### Dados
+
+| Onde | O que guarda |
+|---|---|
+| `movimentos` | Gastos, entradas e ajustes: `{ tipo: 'gasto' \| 'entrada' \| 'ajuste', valor (positivo), data 'AAAA-MM-DD', categoria, descricao }`. Campos novos: `fixoId` (gasto lançado por um fixo), `origem: 'extrato'` e `chaveExtrato` (gasto importado do extrato). |
+| `fixos` | Os gastos fixos do mês e os meses pulados de cada um. |
+| `regras` | As regras de categoria aprendidas na importação do extrato (trecho da descrição → categoria). |
+| `caixa/push.json` → `enviados` | As chaves `gastos:AAAA-MM:80` e `gastos:AAAA-MM:100` dos avisos já enviados. |
+
+Categorias: `uber` (Uber e 99), `ifood` (iFood), `restaurante`, `mercado`, `transporte`, `combustivel`
+(Combustível), `farmacia` (Farmácia), `compras`, `assinaturas`, `viagem`, `lazer` e `outro`.
+
 ## Decisões de arquitetura
 
 **Índices buscados sob demanda, não pelo cron**
@@ -145,3 +229,18 @@ traz também `falhasIndices: { <id>: mensagem }`.
 - *Contexto:* as rotas exigem login (cookie), então a resposta não pode ficar num cache compartilhado da CDN.
 - *Decisão:* cache num `Map` dentro da função (60 s a 15 min, conforme o período) e `cache-control: private` para o navegador. Se a fonte falhar, o servidor devolve o último dado bom com até 6h.
 - *Consequências:* o cache dura enquanto a instância da função está quente, e cada instância nova busca de novo. Nada de dados pessoais passa pela CDN.
+
+**Extrato em PDF lido no navegador**
+- *Contexto:* o extrato do banco tem dados sensíveis (saldo, nomes, contas). O app guarda tudo num único JSON no Blob e não precisa do arquivo depois da importação. As funções da Vercel também limitam o tamanho do pedido.
+- *Decisão:* o PDF é lido no aparelho com o pdf.js (`public/extrato.js`). Para o servidor vão só as linhas confirmadas, já como `movimentos`, pelo `/api/escrever` de sempre.
+- *Consequências:* o PDF nunca sai do aparelho e não existe rota nova no servidor. A leitura depende do layout do extrato do Itaú: se o banco mudar o layout, só `public/extrato.js` precisa mudar. Cada pedido ao `/api/escrever` aceita até 100 operações, então importações maiores vão em mais de um pedido.
+
+**Aviso de gastos disparado na gravação, não no cron**
+- *Contexto:* no plano Hobby o cron roda 1 vez por dia, e o aviso de 80%/100% faz sentido na hora em que o gasto é lançado.
+- *Decisão:* depois de gravar, o `/api/escrever` recalcula o mês atual se o pedido mexeu em `movimentos` (`api/_alertasGastos.js`, só cálculo). Se a faixa mudou, ele envia pelo `api/_push.js` e marca a chave em `enviados`. Tudo fica num `try/catch`: erro na notificação não muda a resposta.
+- *Consequências:* o aviso chega na hora, sem cron novo. Abaixo de 80% não há custo extra. Acima, cada gasto gravado lê também `caixa/push.json`. Pedidos que não mexem em gastos (como mudar a meta em Ajustes) e o que não passa pelo `/api/escrever` (importar backup) só disparam o aviso no próximo gasto gravado. Duas gravações no mesmo instante podem mandar o aviso duas vezes, mas a notificação tem a mesma `tag` e o celular mostra uma só.
+
+**Ids determinísticos para gastos fixos e importação**
+- *Contexto:* o app pode estar aberto em mais de um aparelho e o mesmo extrato pode ser importado mais de uma vez. As gravações não têm transação entre "ver se já existe" e "criar".
+- *Decisão:* o gasto de um fixo usa o id `fixo-<id>-<AAAA-MM>`, e o gasto importado usa um id que sai da chave da linha do extrato (`chaveExtrato`).
+- *Consequências:* gravar de novo sobrescreve o mesmo documento em vez de duplicar. Por isso apagar o gasto de um fixo precisa marcar o mês como pulado; sem isso, o app lançaria o gasto de novo.
