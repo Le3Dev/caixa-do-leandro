@@ -236,19 +236,61 @@
   .idx-linha { display: flex; gap: 8px; flex-wrap: wrap; }
   .idx-pill { font-size: .82rem; padding: 6px 10px; }
   .idx-pill[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-  .idx-head { display: flex; flex-direction: column; gap: 4px; }
+  .idx-head { display: flex; flex-direction: column; gap: 2px; }
   .idx-nome { font-size: 1.05rem; font-weight: 700; }
   .idx-sub { color: var(--muted); font-size: .8rem; }
-  .idx-pontos { font-family: var(--font-display); font-size: 1.65rem; font-weight: 700; line-height: 1.1; }
+  .idx-topo { display: flex; flex-direction: column; gap: 4px; }
+  .idx-cot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
+  .idx-pontos { font-family: var(--font-display); font-size: 2rem; font-weight: 700; line-height: 1.1; letter-spacing: -.01em; }
+  .idx-selo { display: inline-flex; align-items: center; gap: 4px; border-radius: 8px; padding: 3px 8px; font-size: .9rem; font-weight: 700; white-space: nowrap; }
+  .idx-selo.up { color: var(--invest); background: color-mix(in srgb, var(--invest) 14%, transparent); }
+  .idx-selo.down { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+  .idx-selo.flat { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
   .idx-var { font-size: .83rem; font-weight: 700; white-space: nowrap; }
   .idx-var.up { color: var(--invest); }
   .idx-var.down { color: var(--danger); }
   .idx-var.flat { color: var(--muted); }
-  .idx-graf { min-height: 205px; }
+  .idx-quando { color: var(--muted); font-size: .78rem; }
+  .idx-pers { display: flex; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .idx-pers::-webkit-scrollbar { display: none; }
+  .idx-per { flex: 1 0 auto; appearance: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--muted); font-size: .84rem; font-weight: 600; padding: 8px 6px; cursor: pointer; white-space: nowrap; }
+  .idx-per[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+  .idx-graf { position: relative; min-height: 220px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+  .idx-graf svg { display: block; overflow: visible; }
+  .idx-graf .eixo { fill: var(--muted); font-size: 11px; font-family: var(--font-body); }
+  .idx-graf .eixo-ref { fill: var(--muted); font-size: 10px; font-family: var(--font-body); }
+  .idxg-tip { position: absolute; top: 0; left: 0; pointer-events: none; opacity: 0; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: .78rem; white-space: nowrap; box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 18%, transparent); }
+  .idxg-tip b { font-weight: 700; margin-right: 6px; }
+  .idxg-tip span { color: var(--muted); }
+  .idx-tabela { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, auto); grid-auto-flow: column; gap: 6px 18px; font-size: .8rem; }
+  .idx-tabela > div { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; min-width: 0; }
+  .idx-tabela span { color: var(--muted); white-space: nowrap; }
+  .idx-tabela b { font-weight: 600; white-space: nowrap; }
+  .idx-aviso { color: var(--muted); font-size: .78rem; border-left: 3px solid var(--mine); padding: 2px 0 2px 8px; }
+  .idx-aviso .link { font-size: .78rem; padding: 0 0 0 4px; }
   .idx-resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 8px; }
-  .idx-item { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 8px 10px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .idx-item { width: 100%; text-align: left; cursor: pointer; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 8px 10px; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .idx-item[aria-current="true"] { border-color: var(--ink); }
   .idx-item strong { font-size: .86rem; }
+  .idx-item small { display: block; color: var(--muted); font-size: .76rem; font-weight: 400; }
+  .idx-item .idx-var { text-align: right; }
   .idx-fonte { color: var(--muted); font-size: .75rem; }
+  /* Destaques da semana no Ibovespa */
+  .dst-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .dst-bloco h4 { margin: 0 0 2px; font-size: .88rem; font-weight: 700; }
+  .dst-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .dst-l { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding-block: 7px; border-bottom: 1px solid var(--line); font-size: .84rem; }
+  .dst-l:last-child { border-bottom: 0; }
+  .dst-nome { display: flex; flex-direction: column; min-width: 0; }
+  .dst-nome b { font-weight: 700; }
+  .dst-nome small { color: var(--muted); font-size: .74rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dst-val { display: flex; flex-direction: column; align-items: flex-end; text-align: right; white-space: nowrap; }
+  .dst-val > span { font-weight: 600; }
+  .dst-val small { font-size: .76rem; font-weight: 700; }
+  @media (max-width: 30rem) {
+    .idx-tabela { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: none; grid-auto-flow: row; }
+    .dst-grid { grid-template-columns: 1fr; }
+  }
 
   /* Formulários */
   .form h3 { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; }
@@ -586,6 +628,7 @@
     <button class="btn-ghost" id="btn-extra" type="button">Lançar dinheiro extra</button>
     <div id="mes-rend"></div>
     <div id="mes-indices"></div>
+    <div id="mes-destaques"></div>
   </section>
 
   <!-- Para mim -->
@@ -1117,6 +1160,8 @@
     await api('/api/mercado', { method: 'POST', body: '{}' });
     await carregar();
   };
+  // cotações ao vivo dos índices e destaques da semana (só leitura; não mexe nos dados salvos)
+  window.caixaIndices = (query) => api('/api/indices?' + query);
   window.caixaImportar = async (dados) => {
     const j = await api('/api/importar', { method: 'POST', body: JSON.stringify(dados) });
     versao = null;
@@ -2145,14 +2190,15 @@
   }
 
   const IDX_MES = [
-    { id: 'ibovespa', nome: 'Ibovespa', cor: 'var(--c1)' },
-    { id: 'ifix', nome: 'IFIX', cor: 'var(--c3)' },
-    { id: 'sp500', nome: 'S&P 500', cor: 'var(--c2)' },
-    { id: 'nasdaq', nome: 'Nasdaq', cor: 'var(--c6)' },
-    { id: 'dowjones', nome: 'Dow Jones', cor: 'var(--c5)' },
-    { id: 'nikkei', nome: 'Nikkei 225', cor: 'var(--c4)' },
+    { id: 'ibovespa', nome: 'Ibovespa', descricao: 'Principal índice da bolsa brasileira (B3): reúne as ações mais negociadas, com peso pelo valor de mercado.' },
+    { id: 'ifix', nome: 'IFIX', descricao: 'Índice dos fundos imobiliários (FIIs) mais negociados na B3.' },
+    { id: 'sp500', nome: 'S&P 500', descricao: 'As 500 maiores empresas listadas nos EUA, com peso pelo valor de mercado.' },
+    { id: 'nasdaq', nome: 'Nasdaq', descricao: 'Todas as ações da bolsa Nasdaq (EUA), com forte peso de tecnologia.' },
+    { id: 'dowjones', nome: 'Dow Jones', descricao: '30 grandes empresas americanas, com peso pelo preço da ação.' },
+    { id: 'nikkei', nome: 'Nikkei 225', descricao: 'As 225 principais empresas da Bolsa de Tóquio (Japão), com peso pelo preço.' },
   ];
   const IDX_PER = ['1D', '5D', '1M', '6M', 'YTD', '1A', '5A', 'MAX'];
+  const IDX_PER_TXT = { '1D': 'hoje', '5D': 'últimos 5 dias', '1M': 'último mês', '6M': 'últimos 6 meses', YTD: 'no ano', '1A': 'último ano', '5A': 'últimos 5 anos', MAX: 'desde o início' };
 
   function serieIndice(id) {
     const mapa = {};
@@ -2188,95 +2234,486 @@
     return out.length >= 2 ? out : serie.slice(Math.max(0, serie.length - 2));
   }
 
-  function pontosIndice(v) {
-    const n = Number(v) || 0;
-    return (n >= 1000 ? num0 : num2).format(n) + ' pts';
+  /* ---------- índices de mercado ao vivo ----------
+     O desenho (renderIndicesMes / renderDestaquesMes) só lê o cache abaixo. Quem vai à rede é
+     idxAtivar: ao abrir a aba Mês, ao trocar índice ou período, ao voltar para o app e, com o
+     pregão aberto, a cada 60 s. Cada chave tem prazo de validade e trava de "em andamento". */
+  const FUSO_BR = 'America/Sao_Paulo';
+  function criarFmtData(o) {
+    try { return new Intl.DateTimeFormat('pt-BR', o); }
+    catch (e) { const s = Object.assign({}, o); delete s.timeZone; return new Intl.DateTimeFormat('pt-BR', s); }
   }
-
+  // horários vêm em UTC e são mostrados em Brasília; datas diárias ('AAAA-MM-DD') usam UTC para não trocar de dia
+  const F_BR_DIA = criarFmtData({ timeZone: FUSO_BR, day: 'numeric', month: 'short' });                         // 3 de nov.
+  const F_BR_HORA = criarFmtData({ timeZone: FUSO_BR, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });  // 12:24
+  const F_BR_ISO = criarFmtData({ timeZone: FUSO_BR, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const F_U_SEMANA = criarFmtData({ timeZone: 'UTC', weekday: 'short', day: 'numeric' });                      // seg., 3
+  const F_U_DIAMES = criarFmtData({ timeZone: 'UTC', day: 'numeric', month: 'short' });                        // 10 de out.
+  const F_U_DICA = criarFmtData({ timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' });        // ter., 2 de jun.
+  const F_U_MES_ANO = criarFmtData({ timeZone: 'UTC', month: 'short', year: 'numeric' });                      // jun. de 2026
+  const F_U_MES = criarFmtData({ timeZone: 'UTC', month: 'short' });                                           // jun.
+  const dataUTC = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); return new Date(Date.UTC(y || 1970, (m || 1) - 1, d || 1)); };
+  function isoBR(t) {
+    const o = {};
+    F_BR_ISO.formatToParts(new Date(t)).forEach((x) => { o[x.type] = x.value; });
+    return o.year + '-' + o.month + '-' + o.day;
+  }
+  const diaDe = (p) => p.data || (Number.isFinite(p.t) ? isoBR(p.t) : '');
+  const segundaDe = (iso) => { const d = dataUTC(iso); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
+  const numOuNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const sinalNum = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + num2.format(Math.abs(v));
+  const classeVar = (v) => (!Number.isFinite(v) ? 'flat' : v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
+  const setaVar = (v) => (v > 0 ? '↑' : v < 0 ? '↓' : '');
   function varIndiceTxt(pct, abs) {
-    if (!Number.isFinite(pct) || !Number.isFinite(abs)) return 'sem variação do dia';
-    const sinal = pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : '';
-    return sinal + num2.format(Math.abs(pct)) + '% (' + (abs >= 0 ? '+ ' : '− ') + num2.format(Math.abs(abs)) + ')';
+    if (!Number.isFinite(pct)) return 'sem variação do dia';
+    const seta = setaVar(pct);
+    return (seta ? seta + ' ' : '') + num2.format(Math.abs(pct)) + '%' + (Number.isFinite(abs) ? ' (' + sinalNum(abs) + ')' : '');
+  }
+  function quandoBR(quando) {
+    const d = new Date(quando);
+    if (quando === null || quando === undefined || quando === '' || Number.isNaN(d.getTime())) return '';
+    return F_BR_DIA.format(d) + ', ' + F_BR_HORA.format(d);
   }
 
+  const idxCache = new Map();     // chave -> { em, okEm, dados, erro }
+  const idxBuscando = new Set();  // chaves com busca em andamento
+  let idxRelogio = null;
+  const idxChaveSel = () => 'idx|' + S.idxSel + '|' + S.idxPer;
+  const idxPodeMostrar = () => !S.semDb && !!(S.loaded.cfg && S.loaded.receb && S.cfg);
+
+  function idxMsgErro(e) {
+    const m = e && e.message ? String(e.message) : '';
+    if (e && e.code === 'unauthenticated') return 'sua sessão expirou; entre de novo';
+    if (m === 'sem internet') return 'sem internet';
+    const srv = /^servidor (\d+)/.exec(m);
+    if (srv) return 'o serviço de cotações não respondeu (erro ' + srv[1] + ')';
+    return m || 'o serviço de cotações devolveu uma resposta inválida';
+  }
+  function idxTtl(chave, c) {
+    if (c.erro) return 60e3;
+    const d = c.dados || {};
+    if (chave === 'resumo') return Array.isArray(d.indices) && d.indices.some((x) => x && x.pregaoAberto === true) ? 60e3 : 10 * 60e3;
+    if (chave === 'destaques') return d.fechada ? 30 * 60e3 : 5 * 60e3;
+    return d.pregaoAberto === true ? 60e3 : 10 * 60e3;
+  }
+  async function idxBuscar(chave, query, forcar) {
+    const c = idxCache.get(chave);
+    if (idxBuscando.has(chave) || (!forcar && c && Date.now() - c.em < idxTtl(chave, c))) return;
+    if (typeof window.caixaIndices !== 'function') return;
+    idxBuscando.add(chave);
+    try {
+      const dados = await window.caixaIndices(query);
+      if (!dados || typeof dados !== 'object') throw { message: 'o serviço de cotações devolveu uma resposta vazia' };
+      const agora = Date.now();
+      idxCache.set(chave, { em: agora, okEm: agora, dados, erro: null });
+    } catch (e) {
+      const antes = idxCache.get(chave);
+      idxCache.set(chave, { em: Date.now(), okEm: antes ? antes.okEm : null, dados: antes ? antes.dados : null, erro: idxMsgErro(e) });
+    } finally {
+      idxBuscando.delete(chave);
+      if (S.tab === 'mes' && idxPodeMostrar()) { renderIndicesMes(); renderDestaquesMes(); }
+      idxAgendar();
+    }
+  }
+  /* Busca o que falta (ou tudo, com forcar) e agenda a próxima rodada. */
+  function idxAtivar(forcar) {
+    if (!S.db || S.tab !== 'mes' || document.visibilityState === 'hidden') { idxParar(); return; }
+    if (!IDX_MES.some((x) => x.id === S.idxSel)) S.idxSel = IDX_MES[0].id;
+    if (!IDX_PER.includes(S.idxPer)) S.idxPer = 'YTD';
+    idxBuscar(idxChaveSel(), 'id=' + encodeURIComponent(S.idxSel) + '&periodo=' + encodeURIComponent(S.idxPer), forcar);
+    idxBuscar('resumo', 'lista=resumo', forcar);
+    idxBuscar('destaques', 'lista=destaques-semana', forcar);
+    idxAgendar();
+  }
+  function idxParar() { clearTimeout(idxRelogio); idxRelogio = null; }
+  // com a tela visível, a aba Mês aberta e o pregão do índice escolhido aberto, atualiza a cada 60 s
+  function idxAgendar() {
+    idxParar();
+    if (!S.db || S.tab !== 'mes' || document.visibilityState !== 'visible') return;
+    const c = idxCache.get(idxChaveSel());
+    if (!(c && c.dados && c.dados.pregaoAberto === true)) return;
+    idxRelogio = setTimeout(() => { idxRelogio = null; idxAtivar(true); }, 60e3);
+  }
+
+  function pontosValidos(lista) {
+    return (Array.isArray(lista) ? lista : [])
+      .map((p) => ({ t: p && p.t != null ? Number(p.t) : NaN, data: p && p.data ? String(p.data).slice(0, 10) : '', valor: Number(p && p.valor) }))
+      .filter((p) => Number.isFinite(p.valor) && p.valor > 0 && (p.data || Number.isFinite(p.t)));
+  }
+  function vistaAoVivo(d) {
+    const pontos = pontosValidos(d && d.pontos);
+    if (!pontos.length) return null;
+    const ult = pontos[pontos.length - 1];
+    const r = d.resumo && typeof d.resumo === 'object' ? d.resumo : {};
+    return {
+      aoVivo: true,
+      valor: Number(d.valor) > 0 ? Number(d.valor) : ult.valor,
+      horario: d.horario || null,
+      dataFech: diaDe(ult) || null,
+      pregaoAberto: d.pregaoAberto === true,
+      fechamentoAnterior: numOuNull(d.fechamentoAnterior),
+      intradiario: d.intradiario === true,
+      pontos,
+      resumo: { abertura: numOuNull(r.abertura), alta: numOuNull(r.alta), baixa: numOuNull(r.baixa), alta52: numOuNull(r.alta52), baixa52: numOuNull(r.baixa52) },
+      fonte: d.fonte ? String(d.fonte) : '',
+    };
+  }
+  // reserva: fechamentos diários salvos (mercado/atual + mercado_hist), como antes
+  function vistaSalva(id, per) {
+    const info = S.mercado && S.mercado.indices && S.mercado.indices[id];
+    const serie = filtrarPeriodo(serieIndice(id), per);
+    if (!serie.length) return null;
+    const ult = serie[serie.length - 1];
+    let fechAnt = info ? numOuNull(info.anteriorValor) : null;
+    if (!(fechAnt > 0) && serie.length > 1) fechAnt = Number(serie[serie.length - 2].valor);
+    return {
+      aoVivo: false,
+      valor: info && Number(info.valor) > 0 ? Number(info.valor) : Number(ult.valor),
+      horario: null,
+      dataFech: (info && info.data) || ult.data,
+      pregaoAberto: false,
+      fechamentoAnterior: fechAnt > 0 ? fechAnt : null,
+      intradiario: false,
+      pontos: serie.map((p) => ({ t: NaN, data: p.data, valor: Number(p.valor) })),
+      resumo: { abertura: null, alta: null, baixa: null, alta52: null, baixa52: null },
+      fonte: (info && info.fonte) || '',
+    };
+  }
+  // 1D: valor de agora contra o fechamento anterior; demais períodos: último ponto contra o primeiro
+  function variacaoPeriodo(v, per) {
+    let base = null, fim = null;
+    if (per === '1D' && v.fechamentoAnterior > 0) { base = v.fechamentoAnterior; fim = v.valor; }
+    else if (v.pontos.length >= 2) { base = v.pontos[0].valor; fim = v.pontos[v.pontos.length - 1].valor; }
+    if (!(base > 0) || !Number.isFinite(fim)) return null;
+    const abs = fim - base;
+    return { abs, pct: abs / base * 100 };
+  }
+  function quandoTxt(v) {
+    const q = v.aoVivo && v.horario ? quandoBR(v.horario) : '';
+    if (q) return (v.pregaoAberto ? '' : 'Fechamento · ') + q + ' (horário de Brasília)';
+    return v.dataFech ? 'Fechamento · ' + F_U_DIAMES.format(dataUTC(v.dataFech)) : '';
+  }
+  function linhasResumo() {
+    const rr = idxCache.get('resumo');
+    const vivos = rr && rr.dados && Array.isArray(rr.dados.indices) ? rr.dados.indices : [];
+    const salvos = (S.mercado && S.mercado.indices) || {};
+    return IDX_MES.map((idx) => {
+      const v = vivos.find((x) => x && x.id === idx.id);
+      if (v && Number(v.valor) > 0) return { idx, valor: Number(v.valor), pct: numOuNull(v.variacaoDiaPct), abs: numOuNull(v.variacaoDia) };
+      const s = salvos[idx.id];
+      if (s && Number(s.valor) > 0) return { idx, valor: Number(s.valor), pct: numOuNull(s.variacaoDiaPct), abs: numOuNull(s.variacaoDia) };
+      return { idx, valor: null, pct: null, abs: null };
+    });
+  }
+
+  /* ---------- gráfico de cotação (estilo Google Finance) ---------- */
+  function passoRedondo(bruto) {
+    if (!(bruto > 0)) return 1;
+    const pot = Math.pow(10, Math.floor(Math.log10(bruto)));
+    const f = bruto / pot;
+    return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * pot;
+  }
+  function casasDe(passo) {
+    let c = 0;
+    while (c < 6 && Math.abs(passo * Math.pow(10, c) - Math.round(passo * Math.pow(10, c))) > 1e-6) c++;
+    return c;
+  }
+  function escalaX(per, intradiario) {
+    if (intradiario && per === '1D') return 'hora';
+    if (per === '1D' || per === '5D') return 'dia';
+    if (per === '1M') return 'semana';
+    if (per === '5A' || per === 'MAX') return 'ano';
+    return 'mes';
+  }
+  // candidatos a rótulo no eixo X: o primeiro ponto de cada hora, dia, semana, mês ou ano
+  function marcasEixoX(pts, escala) {
+    const chave = (p) => {
+      if (escala === 'hora') return Number.isFinite(p.t) ? F_BR_HORA.format(new Date(p.t)).slice(0, 2) : '';
+      if (escala === 'dia') return diaDe(p);
+      if (!p.data) return '';
+      if (escala === 'semana') return segundaDe(p.data);
+      if (escala === 'ano') return p.data.slice(0, 4);
+      return p.data.slice(0, 7);
+    };
+    const out = [];
+    let antes = null;
+    pts.forEach((p, i) => {
+      const k = chave(p);
+      if (!k) return;
+      if (k !== antes && (antes !== null || escala === 'dia')) {
+        if (escala === 'hora') out.push({ i, longo: k + ':00' });
+        else if (escala === 'dia') out.push({ i, longo: F_U_SEMANA.format(dataUTC(k)) });
+        else if (escala === 'semana') out.push({ i, longo: F_U_DIAMES.format(dataUTC(p.data)) });
+        else if (escala === 'ano') out.push({ i, longo: k });
+        else out.push({ i, longo: F_U_MES_ANO.format(dataUTC(p.data)), curto: F_U_MES.format(dataUTC(p.data)) });
+      }
+      antes = k;
+    });
+    return out;
+  }
+  // pega um a cada k candidatos, com o menor k em que os rótulos não se encostam;
+  // nos meses usa "jun. de 2026" quando cabem ao menos 3 rótulos, senão "jun."
+  function escolherMarcas(cands, xDe, W) {
+    const larg = (t) => String(t).length * 6.2;
+    const tentar = (campo) => {
+      for (let k = 1; k <= Math.max(1, cands.length); k++) {
+        const sel = [];
+        let fimAnt = -Infinity, ok = true;
+        for (let j = 0; j < cands.length; j += k) {
+          const txt = cands[j][campo] || cands[j].longo;
+          const w = larg(txt), xx = xDe(cands[j].i);
+          if (xx - w / 2 < 0 || xx + w / 2 > W) continue;
+          if (xx - w / 2 < fimAnt + 12) { ok = false; break; }
+          sel.push({ i: cands[j].i, txt });
+          fimAnt = xx + w / 2;
+        }
+        if (ok) return sel;
+      }
+      return [];
+    };
+    const longos = tentar('longo');
+    if (!cands.some((c) => c.curto) || longos.length >= Math.min(3, cands.length)) return longos;
+    return tentar('curto');
+  }
+  /* Gráfico novo (não usa desenharLinhas): eixo de valores redondos à esquerda, grade suave,
+     rótulos de tempo conforme o período, linha + área em degradê e, no 1D, o fechamento anterior
+     tracejado. Guarda a geometria em box.__geo para a dica ao passar o mouse ou o dedo. */
+  function desenharCotacao(box, o) {
+    const W = box.clientWidth;
+    if (!W) return;
+    const pts = o.pontos, n = pts.length;
+    if (!n) { box.__geo = null; box.innerHTML = '<p class="hint">Sem cotações nesse período.</p>'; return; }
+    const H = 220, mt = 10, mb = 26, mr = 6;
+    let lo = Infinity, hi = -Infinity;
+    pts.forEach((p) => { if (p.valor < lo) lo = p.valor; if (p.valor > hi) hi = p.valor; });
+    const ref = o.ref > 0 ? o.ref : null;
+    if (ref !== null) { lo = Math.min(lo, ref); hi = Math.max(hi, ref); }
+    if (!(hi > lo)) { const folga = Math.abs(hi) * 0.005 || 1; lo -= folga; hi += folga; }
+    // 4 ou 5 valores redondos no eixo
+    let passo = passoRedondo((hi - lo) / 6), y0 = lo, y1 = hi;
+    for (let k = 0; k < 30; k++) {
+      y0 = Math.floor(lo / passo + 1e-9) * passo;
+      y1 = Math.ceil(hi / passo - 1e-9) * passo;
+      if (y1 <= y0) y1 = y0 + passo;
+      if ((y1 - y0) / passo <= 4.0001) break;
+      passo = passoRedondo(passo * 1.01);
+    }
+    const casas = casasDe(passo);
+    const fy = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+    const ticks = [];
+    for (let k = 0; k <= Math.round((y1 - y0) / passo); k++) ticks.push(y0 + k * passo);
+    const rotY = ticks.map((v) => fy.format(v));
+    const ml = Math.ceil(Math.max(...rotY.map((t) => t.length)) * 6.3) + 12;
+    const plotW = Math.max(1, W - ml - mr);
+    const base = H - mb;
+    const x = (i) => ml + plotW * (n === 1 ? 0.5 : i / (n - 1));
+    const y = (v) => mt + (base - mt) * (1 - (v - y0) / (y1 - y0));
+    const f1 = (v) => v.toFixed(1);
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" height="' + H + '" role="img" aria-label="' + esc(o.titulo) + '">';
+    svg += '<defs><linearGradient id="idxg-degrade" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:' + o.cor + ';stop-opacity:.28"></stop><stop offset="1" style="stop-color:' + o.cor + ';stop-opacity:0"></stop></linearGradient></defs>';
+    ticks.forEach((v, k) => {
+      const yy = y(v);
+      svg += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + f1(yy) + '" y2="' + f1(yy) + '" stroke="var(--line)" stroke-width="1"' + (k ? ' stroke-opacity=".7"' : '') + '></line>';
+      svg += '<text class="eixo" x="' + (ml - 8) + '" y="' + f1(yy + 4) + '" text-anchor="end">' + esc(rotY[k]) + '</text>';
+    });
+    const d = pts.map((p, i) => (i ? 'L' : 'M') + f1(x(i)) + ' ' + f1(y(p.valor))).join(' ');
+    if (n > 1) svg += '<path d="' + d + ' L' + f1(x(n - 1)) + ' ' + base + ' L' + f1(x(0)) + ' ' + base + ' Z" fill="url(#idxg-degrade)"></path>';
+    if (ref !== null) {
+      const yr = y(ref);
+      svg += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + f1(yr) + '" y2="' + f1(yr) + '" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 4"></line>';
+      svg += '<text class="eixo-ref" x="' + (W - mr) + '" y="' + f1(yr - 5 < mt + 8 ? yr + 13 : yr - 5) + '" text-anchor="end">Fech. ant. ' + esc(num2.format(ref)) + '</text>';
+    }
+    svg += '<path d="' + d + '" fill="none" stroke="' + o.cor + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>';
+    if (n === 1) svg += '<circle cx="' + f1(x(0)) + '" cy="' + f1(y(pts[0].valor)) + '" r="3.5" fill="' + o.cor + '"></circle>';
+    escolherMarcas(marcasEixoX(pts, o.escala), x, W).forEach((m) => {
+      const xx = f1(x(m.i));
+      svg += '<line x1="' + xx + '" x2="' + xx + '" y1="' + base + '" y2="' + (base + 4) + '" stroke="var(--muted)" stroke-width="1"></line>';
+      svg += '<text class="eixo" x="' + xx + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(m.txt) + '</text>';
+    });
+    svg += '<g class="idxg-hov" pointer-events="none" style="opacity:0"><line class="idxg-vl" x1="0" x2="0" y1="' + mt + '" y2="' + base + '" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3"></line>' +
+      '<circle class="idxg-pt" cx="0" cy="0" r="4.5" fill="' + o.cor + '" stroke="var(--surface)" stroke-width="2"></circle></g>';
+    svg += '</svg><div class="idxg-tip" aria-hidden="true"><b>&nbsp;</b><span>&nbsp;</span></div>';
+    box.innerHTML = svg;
+    box.__geo = { W, ml, plotW, n, xs: pts.map((p, i) => x(i)), ys: pts.map((p) => y(p.valor)), pontos: pts, intradiario: o.intradiario };
+  }
+  function dataDica(p, intradiario) {
+    if ((intradiario || !p.data) && Number.isFinite(p.t)) return quandoBR(p.t);
+    if (!p.data) return '';
+    const ano = p.data.slice(0, 4);
+    return F_U_DICA.format(dataUTC(p.data)) + (ano !== String(new Date().getFullYear()) ? ' de ' + ano : '');
+  }
+  let idxDicaAberta = false;
+  let idxDicaTimer = null;
+  function idxEsconderDica() {
+    clearTimeout(idxDicaTimer);
+    if (!idxDicaAberta) return;
+    idxDicaAberta = false;
+    $$('#mes-indices .idxg-hov, #mes-indices .idxg-tip').forEach((el) => { el.style.opacity = '0'; });
+  }
+  function idxMostrarDica(alvo, clientX) {
+    const g = alvo.__geo;
+    const hov = alvo.querySelector('.idxg-hov');
+    const tip = alvo.querySelector('.idxg-tip');
+    if (!g || !g.n || !hov || !tip) return;
+    const r = alvo.getBoundingClientRect();
+    const k = r.width ? g.W / r.width : 1;
+    const px = (clientX - r.left) * k;
+    const i = g.n === 1 ? 0 : Math.max(0, Math.min(g.n - 1, Math.round((px - g.ml) / g.plotW * (g.n - 1))));
+    const p = g.pontos[i];
+    const vl = hov.querySelector('.idxg-vl'), pt = hov.querySelector('.idxg-pt');
+    if (vl) { vl.setAttribute('x1', g.xs[i].toFixed(1)); vl.setAttribute('x2', g.xs[i].toFixed(1)); }
+    if (pt) { pt.setAttribute('cx', g.xs[i].toFixed(1)); pt.setAttribute('cy', g.ys[i].toFixed(1)); }
+    // troca só o texto (characterData), que o observador da animação da tela não acompanha
+    const b = tip.querySelector('b'), s = tip.querySelector('span');
+    if (b && b.firstChild) b.firstChild.data = num2.format(p.valor);
+    if (s && s.firstChild) s.firstChild.data = dataDica(p, g.intradiario);
+    hov.style.opacity = '1';
+    tip.style.opacity = '1';
+    const tw = tip.offsetWidth;
+    const esq = Math.max(0, Math.min(r.width - tw, g.xs[i] / k - tw / 2));
+    tip.style.transform = 'translateX(' + esq.toFixed(1) + 'px)';
+    idxDicaAberta = true;
+  }
+
+  /* ---------- card "Índices de mercado" (desenha só a partir do cache) ---------- */
   function renderIndicesMes() {
     const box = $('#mes-indices');
     if (!box) return;
-    if (!S.loaded.mercado || !S.loaded.hist) {
-      box.innerHTML = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Carregando os índices…</p></div>';
-      return;
+    try {
+      montarIndicesMes(box);
+    } catch (e) {
+      box.innerHTML = '<div class="card"><h3>Índices de mercado</h3><p class="err">Não consegui montar o quadro dos índices: ' + esc((e && e.message) || 'erro inesperado') + '.</p></div>';
     }
-    const itens = IDX_MES
-      .map((idx) => {
-        const info = S.mercado && S.mercado.indices && S.mercado.indices[idx.id];
-        const serie = serieIndice(idx.id);
-        return { idx, info, serie };
-      })
-      .filter((x) => x.info && Number(x.info.valor) > 0);
-
-    if (!itens.length) {
-      box.innerHTML = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Ainda sem dados de índices para mostrar.</p></div>';
-      return;
-    }
-
-    if (!itens.some((x) => x.idx.id === S.idxSel)) S.idxSel = itens[0].idx.id;
+  }
+  function montarIndicesMes(box) {
+    if (!IDX_MES.some((x) => x.id === S.idxSel)) S.idxSel = IDX_MES[0].id;
     if (!IDX_PER.includes(S.idxPer)) S.idxPer = 'YTD';
+    const idx = IDX_MES.find((x) => x.id === S.idxSel);
+    const per = S.idxPer;
+    const chave = idxChaveSel();
+    const c = idxCache.get(chave);
+    const buscando = idxBuscando.has(chave) || !c;
+    const temSalvos = !!(S.loaded.mercado && S.loaded.hist);
+    let vista = c && c.dados ? vistaAoVivo(c.dados) : null;
+    let aviso = '';
+    if (vista && c.erro) {
+      aviso = 'Não consegui atualizar agora (' + c.erro + '). Mostrando a última cotação recebida' + (c.okEm ? ', das ' + F_BR_HORA.format(new Date(c.okEm)) : '') + '.';
+    }
+    if (!vista && temSalvos) {
+      vista = vistaSalva(idx.id, per);
+      if (vista && buscando) aviso = 'Buscando a cotação ao vivo…';
+      else if (vista) {
+        const erroAuto = S.mercado && S.mercado.indicesErro ? ' Atualização automática: ' + S.mercado.indicesErro + '.' : '';
+        aviso = 'Mostrando os fechamentos diários salvos. A busca ao vivo falhou: ' + ((c && c.erro) || 'sem cotações para este período') + '.' + erroAuto;
+      }
+    }
+    const comTentar = !buscando && (!vista || !vista.aoVivo || !!c.erro);
 
-    const ativo = itens.find((x) => x.idx.id === S.idxSel) || itens[0];
-    const serie = filtrarPeriodo(ativo.serie, S.idxPer);
-    const ini = serie.length ? serie[0].data : null;
-    const fim = serie.length ? serie[serie.length - 1].data : null;
-    const base = serie.length ? Number(serie[0].valor) : null;
-    const fimV = serie.length ? Number(serie[serie.length - 1].valor) : null;
-    const varPerAbs = Number.isFinite(base) && Number.isFinite(fimV) ? fimV - base : NaN;
-    const varPerPct = Number.isFinite(base) && base > 0 ? (varPerAbs / base) * 100 : NaN;
-    const clsPer = Number.isFinite(varPerPct) ? (varPerPct > 0 ? 'up' : varPerPct < 0 ? 'down' : 'flat') : 'flat';
-    const clsDia = Number(ativo.info.variacaoDiaPct) > 0 ? 'up' : Number(ativo.info.variacaoDiaPct) < 0 ? 'down' : 'flat';
-
-    let html = '<div class="card"><h3>Índices de mercado</h3><p class="hint">Visual parecido com home broker: escolha o índice e filtre o período para acompanhar quedas e oportunidades.</p>' +
-      '<div class="idx-ctrl">' +
-        '<div class="idx-linha">' +
-          itens.map((x) => '<button class="pill idx-pill" type="button" data-idx-sel="' + esc(x.idx.id) + '" aria-pressed="' + (x.idx.id === S.idxSel ? 'true' : 'false') + '">' + esc(x.idx.nome) + '</button>').join('') +
-        '</div>' +
-        '<div class="idx-linha">' +
-          IDX_PER.map((p) => '<button class="pill idx-pill" type="button" data-idx-per="' + p + '" aria-pressed="' + (p === S.idxPer ? 'true' : 'false') + '">' + (p === 'MAX' ? 'Máx' : p) + '</button>').join('') +
-        '</div>' +
+    let html = '<div class="card"><h3>Índices de mercado</h3>' +
+      '<div class="idx-linha" role="group" aria-label="Índice">' +
+        IDX_MES.map((x) => '<button class="pill idx-pill" type="button" data-idx-sel="' + esc(x.id) + '" aria-pressed="' + (x.id === idx.id) + '">' + esc(x.nome) + '</button>').join('') +
       '</div>' +
-      '<div class="idx-head"><div class="idx-nome">' + esc(ativo.idx.nome) + '</div><div class="idx-sub">' + (fim ? 'até ' + esc(dataBR(fim)) : 'sem dados') + '</div></div>' +
-      '<div class="idx-pontos">' + esc(pontosIndice(ativo.info.valor)) + '</div>' +
-      '<div class="idx-linha"><span class="idx-var ' + clsPer + '">Período: ' + esc(varIndiceTxt(varPerPct, varPerAbs)) + '</span><span class="idx-var ' + clsDia + '">Hoje: ' + esc(varIndiceTxt(Number(ativo.info.variacaoDiaPct), Number(ativo.info.variacaoDia))) + '</span></div>' +
-      '<div class="idx-graf" id="idx-g-principal"></div>';
-    if (ini && fim) html += '<p class="hint">De ' + esc(dataCurta(ini)) + ' a ' + esc(dataCurta(fim)) + '.</p>';
-    html += '<div class="idx-resumo">' + itens.map((x) => {
-      const pct = Number(x.info.variacaoDiaPct);
-      const abs = Number(x.info.variacaoDia);
-      const cls = Number.isFinite(pct) ? (pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat') : 'flat';
-      return '<div class="idx-item"><span><strong>' + esc(x.idx.nome) + '</strong></span><span class="idx-var ' + cls + '">' + esc(varIndiceTxt(pct, abs)) + '</span></div>';
-    }).join('') + '</div>' +
-    '<div class="idx-fonte">Fonte: ' + esc(ativo.info.fonte || 'mercado') + ' · atualização diária</div></div>';
+      '<div class="idx-head"><div class="idx-nome">' + esc(idx.nome) + '</div><div class="idx-sub">' + esc(idx.descricao) + '</div></div>';
+    let varP = null;
+    let cor = 'var(--invest)';
+    if (vista) {
+      varP = variacaoPeriodo(vista, per);
+      const cls = classeVar(varP ? varP.pct : NaN);
+      const seta = varP ? setaVar(varP.pct) : '';
+      if (varP && varP.abs < 0) cor = 'var(--danger)';
+      html += '<div class="idx-topo"><div class="idx-cot"><span class="idx-pontos">' + esc(num2.format(vista.valor)) + '</span>' +
+        (varP
+          ? '<span class="idx-selo ' + cls + '">' + (seta ? '<span aria-hidden="true">' + seta + '</span>' : '') + esc(num2.format(Math.abs(varP.pct))) + '%</span>' +
+            '<span class="idx-var ' + cls + '">' + esc(sinalNum(varP.abs)) + ' ' + esc(IDX_PER_TXT[per]) + '</span>'
+          : '') +
+        '</div><div class="idx-quando">' + esc(quandoTxt(vista)) + '</div></div>';
+    }
+    html += '<div class="idx-pers" role="group" aria-label="Período do gráfico">' +
+      IDX_PER.map((p) => '<button class="idx-per" type="button" data-idx-per="' + p + '" aria-pressed="' + (p === per) + '"' + (p === 'MAX' ? ' aria-label="Máximo"' : '') + '>' + (p === 'MAX' ? 'Máx' : esc(p)) + '</button>').join('') +
+      '</div>';
+    if (vista) {
+      const r = vista.resumo;
+      const cel = (rot, v) => '<div><span>' + rot + '</span><b>' + (v === null || !Number.isFinite(v) ? '—' : esc(num2.format(v))) + '</b></div>';
+      html += '<div class="idx-graf" id="idx-g-principal"></div>' +
+        '<div class="idx-tabela">' + cel('Abertura', r.abertura) + cel('Alta', r.alta) + cel('Baixa', r.baixa) + cel('Fech. ant.', vista.fechamentoAnterior) + cel('Alt 52 sem', r.alta52) + cel('Bai 52 sem', r.baixa52) + '</div>';
+    } else if (buscando) {
+      html += '<p class="hint">Carregando a cotação…</p>';
+    } else {
+      html += '<p class="err">Não consegui buscar a cotação do ' + esc(idx.nome) + ': ' + esc((c && c.erro) || 'sem cotações para este período') + '.' + (temSalvos ? ' E não há fechamentos salvos deste índice nesse período.' : '') + '</p>';
+    }
+    if (aviso || comTentar) html += '<p class="idx-aviso">' + esc(aviso) + (comTentar ? ' <button class="link" type="button" data-idx-tentar>Tentar de novo</button>' : '') + '</p>';
+    html += '<div class="idx-resumo">' + linhasResumo().map((l) => '<button class="idx-item" type="button" data-idx-sel="' + esc(l.idx.id) + '"' + (l.idx.id === idx.id ? ' aria-current="true"' : '') + '>' +
+      '<span><strong>' + esc(l.idx.nome) + '</strong><small>' + (l.valor ? esc(num2.format(l.valor)) : '—') + '</small></span>' +
+      '<span class="idx-var ' + classeVar(l.pct === null ? NaN : l.pct) + '">' + esc(varIndiceTxt(l.pct === null ? NaN : l.pct, l.abs === null ? NaN : l.abs)) + '</span></button>').join('') + '</div>';
+    let fonte = '';
+    if (vista && vista.aoVivo) fonte = 'Fonte: ' + (vista.fonte || 'cotação ao vivo') + (c && c.okEm ? ' · atualizado às ' + F_BR_HORA.format(new Date(c.okEm)) + ' (horário de Brasília)' : '');
+    else if (vista) fonte = 'Fonte: ' + (vista.fonte || 'mercado') + ' · fechamentos diários salvos' + (S.mercado && S.mercado.indicesAtualizadoEm ? ', atualizados em ' + quandoBR(S.mercado.indicesAtualizadoEm) : '');
+    else {
+      const rr = idxCache.get('resumo');
+      if (rr && rr.dados && rr.dados.fonte) fonte = 'Fonte: ' + rr.dados.fonte;
+    }
+    if (fonte) html += '<div class="idx-fonte">' + esc(fonte) + '</div>';
+    html += '</div>';
     box.innerHTML = html;
 
+    if (!vista) return;
     const alvo = $('#idx-g-principal');
     if (!alvo) return;
-    if (!serie.length) {
-      alvo.innerHTML = '<p class="hint">Sem histórico suficiente nesse período.</p>';
-      return;
-    }
-    const rot = Number.isFinite(varPerPct) ? (varPerPct >= 0 ? '+' : '−') + num2.format(Math.abs(varPerPct)) + '%' : null;
-    desenharLinhas(alvo, {
-      titulo: ativo.idx.nome,
-      xIni: dataCurta(serie[0].data),
-      xFim: dataCurta(serie[serie.length - 1].data),
-      zero: false,
-      H: 205,
-      series: [{
-        valores: serie.map((p) => p.valor),
-        cor: ativo.idx.cor,
-        area: true,
-        pontos: serie.length > 1 ? [serie.length - 1] : [],
-        rotuloFim: rot,
-      }],
+    desenharCotacao(alvo, {
+      pontos: vista.pontos,
+      intradiario: vista.intradiario,
+      escala: escalaX(per, vista.intradiario),
+      ref: per === '1D' ? vista.fechamentoAnterior : null,
+      cor,
+      titulo: 'Gráfico do ' + idx.nome + ', ' + IDX_PER_TXT[per] + (varP ? ': ' + (varP.pct >= 0 ? 'alta' : 'queda') + ' de ' + num2.format(Math.abs(varP.pct)) + '%' : ''),
     });
+  }
+
+  /* ---------- card "Destaques da semana no Ibovespa" (desenha só a partir do cache) ---------- */
+  function renderDestaquesMes() {
+    const box = $('#mes-destaques');
+    if (!box) return;
+    const topo = '<div class="card"><h3>Destaques da semana no Ibovespa</h3>';
+    try {
+      const c = idxCache.get('destaques');
+      const buscando = idxBuscando.has('destaques') || !c;
+      if (!c || !c.dados) {
+        box.innerHTML = topo + (buscando
+          ? '<p class="hint">Carregando os destaques…</p>'
+          : '<p class="err">Não consegui buscar os destaques da semana: ' + esc(c.erro || 'resposta vazia') + '.</p><button class="link" type="button" data-dst-tentar>Tentar de novo</button>') + '</div>';
+        return;
+      }
+      const d = c.dados;
+      const valida = (a) => a && typeof a === 'object' && a.codigo;
+      const quedas = Array.isArray(d.quedas) ? d.quedas.filter(valida).slice(0, 10) : [];
+      const altas = Array.isArray(d.altas) ? d.altas.filter(valida).slice(0, 10) : [];
+      const sem = d.semana || {};
+      const dm = (iso) => { const p = String(iso || '').slice(0, 10).split('-'); return p.length === 3 ? Number(p[2]) + '/' + Number(p[1]) : '—'; };
+      const sub = d.fechada
+        ? 'Semana passada (de ' + dm(sem.de) + ' a ' + dm(sem.ate) + '), comparada ao fechamento de ' + dm(sem.base)
+        : 'Semana de ' + dm(sem.de) + (sem.ate && sem.ate !== sem.de ? ' a ' + dm(sem.ate) : '') + ', comparada ao fechamento de ' + dm(sem.base);
+      const linha = (a) => {
+        const pct = numOuNull(a.variacaoSemanaPct), abs = numOuNull(a.variacaoSemana), preco = numOuNull(a.preco);
+        const cls = classeVar(pct === null ? NaN : pct);
+        const seta = pct === null ? '' : setaVar(pct);
+        return '<li class="dst-l"><div class="dst-nome"><b>' + esc(a.codigo) + '</b><small>' + esc(a.nome || '') + '</small></div>' +
+          '<div class="dst-val"><span>' + (preco > 0 ? 'R$ ' + esc(num2.format(preco)) : '—') + '</span>' +
+          '<small class="idx-var ' + cls + '">' + (pct === null ? '—' : (seta ? seta + ' ' : '') + esc(num2.format(Math.abs(pct))) + '%') +
+          (abs === null ? '' : ' (' + (abs > 0 ? '+' : abs < 0 ? '−' : '') + 'R$ ' + esc(num2.format(Math.abs(abs))) + ')') + '</small></div></li>';
+      };
+      const bloco = (tit, lista, vazio) => '<div class="dst-bloco"><h4>' + tit + '</h4>' +
+        (lista.length ? '<ol class="dst-lista">' + lista.map(linha).join('') + '</ol>' : '<p class="hint">' + vazio + '</p>') + '</div>';
+      let html = topo + '<p class="hint">' + esc(sub) + '</p>';
+      if (!quedas.length && !altas.length) html += '<p class="hint">Ainda não há cotações desta semana para comparar.</p>';
+      else html += '<div class="dst-grid">' + bloco('Maiores quedas', quedas, 'Nenhuma ação caiu nesta semana.') + bloco('Maiores altas', altas, 'Nenhuma ação subiu nesta semana.') + '</div>';
+      const semDados = Array.isArray(d.semDados) ? d.semDados.filter(Boolean).map(String) : [];
+      const total = numOuNull(d.total);
+      html += '<div class="idx-fonte">Fonte: ' + esc(d.fonte || 'mercado') + (total !== null ? ' · ' + esc(num0.format(total)) + ' ações consideradas' : '') + (semDados.length ? ' · sem cotação: ' + esc(semDados.join(', ')) : '') + '</div>';
+      if (c.erro) html += '<p class="idx-aviso">Não consegui atualizar agora (' + esc(c.erro) + '). Mostrando a última lista recebida. <button class="link" type="button" data-dst-tentar>Tentar de novo</button></p>';
+      box.innerHTML = html + '</div>';
+    } catch (e) {
+      box.innerHTML = topo + '<p class="err">Não consegui montar os destaques: ' + esc((e && e.message) || 'erro inesperado') + '.</p></div>';
+    }
   }
 
   /* ---------- aba Mês ---------- */
@@ -2288,6 +2725,7 @@
       box.innerHTML = '<div class="card empty"><p>Não deu para abrir seus dados aqui. Abra este app pelo Claude, entrando com a sua conta, para lançar e salvar.</p></div>';
       $('#mes-rend').innerHTML = '';
       $('#mes-indices').innerHTML = '';
+      $('#mes-destaques').innerHTML = '';
       return;
     }
     if (!S.loaded.cfg || !S.loaded.receb) return;
@@ -2295,6 +2733,7 @@
       box.innerHTML = '<div class="card empty"><p>Tem o arquivo de backup do app antigo? Importe e tudo volta como estava. Se for começar do zero, coloque seu salário em Ajustes.</p><button class="btn-primary" type="button" data-importar>Importar backup</button><button class="btn-ghost" type="button" data-goto="ajustes">Abrir ajustes</button></div>';
       $('#mes-rend').innerHTML = '';
       $('#mes-indices').innerHTML = '';
+      $('#mes-destaques').innerHTML = '';
       return;
     }
 
@@ -2389,6 +2828,7 @@
     box.innerHTML = html;
     renderRendMes();
     renderIndicesMes();
+    renderDestaquesMes();
   }
 
   /* Quanto as aplicações pelo CDI rendem no mês escolhido, projetando a partir do último check-in. */
@@ -4072,6 +4512,14 @@
     if (t === 'mim') renderMim();
     if (t === 'projetos') renderProjetos();
     if (t === 'ajustes' && !S.aj.dirty) preencherAjustes();
+    // índices: redesenha com a aba já visível (o gráfico mede a largura) e busca o que estiver vencido
+    if (t === 'mes') {
+      if (idxPodeMostrar()) { renderIndicesMes(); renderDestaquesMes(); }
+      idxAtivar(false);
+    } else {
+      idxParar();
+      idxEsconderDica();
+    }
     if (window.caixaMov) window.caixaMov.aba(t, antes);
   }
 
@@ -4353,18 +4801,60 @@
   $$('#proj-anos [data-anos]').forEach((b) => b.addEventListener('click', () => { S.proj.anos = Number(b.dataset.anos); renderPatrimonio(); }));
   $('#proj-plano').addEventListener('change', () => { S.proj.plano = $('#proj-plano').checked; renderPatrimonio(); });
   $('#proj-cdi').addEventListener('change', () => { S.proj.cdi = $('#proj-cdi').value; renderPatrimonio(); });
+  // a busca começa antes do desenho, para o card já mostrar "carregando" (ou os fechamentos salvos)
   $('#mes-indices').addEventListener('click', (ev) => {
     const bIdx = ev.target.closest('[data-idx-sel]');
     if (bIdx) {
       S.idxSel = bIdx.dataset.idxSel;
+      idxEsconderDica();
+      idxAtivar(false);
       renderIndicesMes();
       return;
     }
     const bPer = ev.target.closest('[data-idx-per]');
     if (bPer) {
       S.idxPer = bPer.dataset.idxPer;
+      idxEsconderDica();
+      idxAtivar(false);
       renderIndicesMes();
+      return;
     }
+    if (ev.target.closest('[data-idx-tentar]')) {
+      idxAtivar(true);
+      renderIndicesMes();
+      renderDestaquesMes();
+    }
+  });
+  // dica do gráfico: mouse, caneta ou dedo (o CSS deixa a rolagem vertical livre com touch-action: pan-y)
+  const idxGrafDe = (ev) => (ev.target && ev.target.closest ? ev.target.closest('.idx-graf') : null);
+  $('#mes-indices').addEventListener('pointermove', (ev) => {
+    const alvo = idxGrafDe(ev);
+    if (!alvo) { idxEsconderDica(); return; }
+    clearTimeout(idxDicaTimer);
+    idxMostrarDica(alvo, ev.clientX);
+  });
+  $('#mes-indices').addEventListener('pointerdown', (ev) => {
+    const alvo = idxGrafDe(ev);
+    if (!alvo) { idxEsconderDica(); return; }
+    clearTimeout(idxDicaTimer);
+    idxMostrarDica(alvo, ev.clientX);
+  });
+  $('#mes-indices').addEventListener('pointerup', (ev) => {
+    if (ev.pointerType === 'mouse') return;
+    clearTimeout(idxDicaTimer);
+    idxDicaTimer = setTimeout(idxEsconderDica, 1800);
+  });
+  $('#mes-indices').addEventListener('pointercancel', idxEsconderDica);
+  $('#mes-indices').addEventListener('pointerleave', (ev) => { if (ev.pointerType === 'mouse') idxEsconderDica(); });
+  $('#mes-destaques').addEventListener('click', (ev) => {
+    if (!ev.target.closest('[data-dst-tentar]')) return;
+    idxBuscar('destaques', 'lista=destaques-semana', true);
+    renderDestaquesMes();
+  });
+  // ao esconder o app, para a atualização dos índices; ao voltar, busca o que venceu
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') idxAtivar(false);
+    else { idxParar(); idxEsconderDica(); }
   });
 
   Object.values(campoAj).forEach((s) => $(s).addEventListener('input', () => { S.aj.dirty = true; previewAjustes(); }));
@@ -4432,7 +4922,10 @@
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (S.tab === 'patrimonio') renderPatrimonio(); }, 150);
+    resizeTimer = setTimeout(() => {
+      if (S.tab === 'patrimonio') renderPatrimonio();
+      else if (S.tab === 'mes' && idxPodeMostrar()) { idxEsconderDica(); renderIndicesMes(); }
+    }, 150);
   });
 
   /* ---------- início ---------- */
@@ -4451,6 +4944,7 @@
     const db = window.claude && typeof window.claude.use === 'function' ? await window.claude.use('db') : null;
     if (!db) { S.semDb = true; render(); return; }
     S.db = db;
+    idxAtivar(false); // cotações ao vivo dos índices (só se a aba Mês estiver aberta)
     const falhou = (e) => { if (e && e.code !== 'revoked') toast('Não consegui carregar seus dados. Recarregue a página.'); };
     db.doc('config/main').onSnapshot((snap) => {
       S.cfg = snap.exists ? snap.data() : null;
