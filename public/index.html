@@ -3456,6 +3456,8 @@
     });
     return out;
   }
+  /* Contas marcadas como reserva de emergência ficam fora da rentabilidade: tirar dinheiro delas não é perda. */
+  const foraRent = (id) => !!(((S.cfg && S.cfg.contas) || []).find((c) => c.id === id) || {}).foraRent;
   const memo = {};
   function lembrar(nome, args, fn) {
     const k = nome + '|' + (S.geracao || 0) + '|' + hojeISO() + '|' + JSON.stringify(args);
@@ -3476,9 +3478,9 @@
       if (isoDe(d) > ini) ini = isoDe(d);
     }
     const inst = (it) => String(it.lugar || '').split(' · ')[0].trim();
-    const entra = (it) => it.hoje != null && it.tipo !== 'estoque' && (it.moeda === 'USD' || it.tipo !== 'conta') && (!filtro || inst(it) === filtro);
+    const entra = (it) => it.hoje != null && it.tipo !== 'estoque' && (it.moeda === 'USD' || it.tipo !== 'conta') && !foraRent(it.id) && (!filtro || inst(it) === filtro);
     const inv = (iso) => { const e = estimativa(iso); return e ? e.itens.filter(entra).reduce((a, it) => a + it.hoje, 0) : 0; };
-    const ids = new Set(((S.cfg && S.cfg.contas) || []).filter((c) => entra({ hoje: 0, tipo: c.tipo, moeda: c.moeda, lugar: c.lugar })).map((c) => c.id));
+    const ids = new Set(((S.cfg && S.cfg.contas) || []).filter((c) => entra({ id: c.id, hoje: 0, tipo: c.tipo, moeda: c.moeda, lugar: c.lugar })).map((c) => c.id));
     const aplicado = {};
     S.aportes.forEach((a) => { if (ids.has(a.contaId)) aplicado[a.data] = (aplicado[a.data] || 0) + (Number(a.valor) || 0); });
     const datas = [ini];
@@ -3516,7 +3518,7 @@
     const r = rentabilidade(filtro, per);
     if (!r || r.datas.length < 2) return null;
     const inst = (it) => String(it.lugar || '').split(' · ')[0].trim();
-    const entra = (it) => it.hoje != null && it.tipo !== 'estoque' && (it.moeda === 'USD' || it.tipo !== 'conta') && (!filtro || inst(it) === filtro);
+    const entra = (it) => it.hoje != null && it.tipo !== 'estoque' && (it.moeda === 'USD' || it.tipo !== 'conta') && !foraRent(it.id) && (!filtro || inst(it) === filtro);
     const mapa = (e) => { const m = {}; if (e) e.itens.filter(entra).forEach((it) => { m[it.id] = it; }); return m; };
     const ap = {};
     S.aportes.forEach((a) => { const k = a.data + '|' + a.contaId; ap[k] = (ap[k] || 0) + (Number(a.valor) || 0); });

@@ -69,6 +69,19 @@ export async function GET(request) {
       });
       return json({ ok: true, conta, criada });
     }
+    // ?conta=<id>&fora=1 tira a conta da rentabilidade (ex.: reserva de emergência); fora=0 volta
+    if (u.searchParams.has('fora')) {
+      const fora = u.searchParams.get('fora') === '1';
+      let achou = false;
+      await alterar((e) => {
+        const c = ((e.cols.config && e.cols.config.main && e.cols.config.main.contas) || []).find((x) => x.id === conta);
+        if (!c) return;
+        achou = true;
+        if (fora) c.foraRent = true; else delete c.foraRent;
+      });
+      if (!achou) throw new ErroPedido('Conta não encontrada.', 404);
+      return json({ ok: true, conta, fora });
+    }
     // ?conta=<id>&ticker=<código> faz a conta andar com o preço diário daquele ETF/ação e já busca os preços
     if (u.searchParams.has('ticker')) {
       const ticker = (u.searchParams.get('ticker') || '').trim().toUpperCase();
