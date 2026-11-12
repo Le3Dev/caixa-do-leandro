@@ -35,6 +35,8 @@ Os arquivos `public/bastion-verificacao.txt` e `public/.well-known/bastion-verif
 do domínio `caixa-do-leandro-lovat.vercel.app` pelo método de arquivo (não é possível criar registros DNS TXT em
 subdomínios `*.vercel.app`). Não devem ser removidos.
 
+A verificação também é feita pelo cabeçalho HTTP `X-Bastion-Verificacao`, configurado em `vercel.json` para todas as rotas; ele não deve ser removido.
+
 ## Cópias automáticas
 Todo dia útil, junto com a atualização do dólar e do CDI, o app grava uma cópia dos dados em
 `caixa/backups/AAAA-MM.json` no Blob (uma por mês, com o último estado do mês). Para restaurar,
