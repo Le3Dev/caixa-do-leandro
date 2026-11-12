@@ -29,6 +29,12 @@ Opcionais: `APP_SECRET` (chave da sessão; sem ela, é derivada da senha) e `CRO
 
 Para conferir a configuração: `https://SEU-DOMINIO/api/estado?diag=1`.
 
+### Verificação de domínio
+
+Os arquivos `public/bastion-verificacao.txt` e `public/.well-known/bastion-verificacao.txt` comprovam a posse
+do domínio `caixa-do-leandro-lovat.vercel.app` pelo método de arquivo (não é possível criar registros DNS TXT em
+subdomínios `*.vercel.app`). Não devem ser removidos.
+
 ## Cópias automáticas
 Todo dia útil, junto com a atualização do dólar e do CDI, o app grava uma cópia dos dados em
 `caixa/backups/AAAA-MM.json` no Blob (uma por mês, com o último estado do mês). Para restaurar,
