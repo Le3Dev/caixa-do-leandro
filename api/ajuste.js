@@ -69,6 +69,54 @@ export async function GET(request) {
       });
       return json({ ok: true, conta, criada });
     }
+    // Extrato do "Para mim": movReset=1 apaga os lançamentos (menos os dos gastos fixos);
+    // movLote=<json em base64url> grava lançamentos do extrato; saldoMim=<valor> acerta o saldo para esse valor.
+    if (u.searchParams.has('movReset')) {
+      let apagados = 0;
+      await alterar((e) => {
+        const mv = e.cols.movimentos || {};
+        Object.keys(mv).forEach((k) => { if (!(mv[k] && mv[k].fixoId)) { delete mv[k]; apagados++; } });
+        e.cols.movimentos = mv;
+      });
+      return json({ ok: true, apagados });
+    }
+    if (u.searchParams.has('movLote')) {
+      let lista;
+      try { lista = JSON.parse(Buffer.from(u.searchParams.get('movLote') || '', 'base64url').toString('utf8')); } catch { throw new ErroPedido('Lote inválido.'); }
+      if (!Array.isArray(lista) || lista.length > 60) throw new ErroPedido('Lote inválido.');
+      const CATS = ['uber', 'ifood', 'restaurante', 'mercado', 'transporte', 'combustivel', 'farmacia', 'compras', 'assinaturas', 'viagem', 'lazer', 'outro'];
+      const agora = new Date().toISOString();
+      const docs = lista.map((m) => {
+        if (!m || !/^ext-r[0-9a-f]{18}$/.test(String(m.id)) || !['gasto', 'entrada'].includes(m.tipo) || !(Number(m.valor) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(m.data))) throw new ErroPedido('Lançamento inválido.');
+        const d = { tipo: m.tipo, valor: Math.round(Number(m.valor) * 100) / 100, data: m.data, descricao: String(m.descricao || '').slice(0, 80), origem: 'extrato', criadoEm: agora };
+        if (m.tipo === 'gasto') d.categoria = CATS.includes(m.categoria) ? m.categoria : 'outro';
+        return [m.id, d];
+      });
+      await alterar((e) => { e.cols.movimentos = e.cols.movimentos || {}; docs.forEach(([id, d]) => { e.cols.movimentos[id] = d; }); });
+      return json({ ok: true, gravados: docs.length });
+    }
+    if (u.searchParams.has('saldoMim')) {
+      const alvo = Number(u.searchParams.get('saldoMim'));
+      if (!Number.isFinite(alvo)) throw new ErroPedido('Valor inválido.');
+      let res = null;
+      await alterar((e) => {
+        const c = e.cols;
+        const n = (v) => Number(v) || 0;
+        const doSalario = Object.values(c.recebimentos || {}).reduce((a, r) => a + n(r && r.paraMim), 0);
+        let mov = 0;
+        Object.values(c.movimentos || {}).forEach((m) => { if (!m) return; if (m.tipo === 'gasto') mov -= n(m.valor); else if (m.tipo === 'entrada' || m.tipo === 'ajuste') mov += n(m.valor); });
+        let rev = 0;
+        Object.values(c.revendas || {}).forEach((r) => { if (!r) return; rev -= n(r.compraValor) + n(r.custos); if (r.vendaData && n(r.vendaValor) > 0) rev += n(r.vendaValor) - n(r.custosVenda); });
+        const inv = Object.values(c.aportes || {}).filter((a) => a && a.origem === 'mim').reduce((a, x) => a + n(x.valor), 0);
+        const antes = Math.round((doSalario + mov + rev - inv) * 100) / 100;
+        const delta = Math.round((alvo - antes) * 100) / 100;
+        const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
+        c.movimentos = c.movimentos || {};
+        if (Math.abs(delta) >= 0.005) c.movimentos['aj-' + Date.now().toString(36)] = { tipo: 'ajuste', valor: delta, alvo: Math.round(alvo * 100) / 100, data: hoje, descricao: (u.searchParams.get('desc') || 'Saldo acertado pelo extrato').slice(0, 60), criadoEm: new Date().toISOString() };
+        res = { antes, delta, alvo };
+      });
+      return json({ ok: true, ...res });
+    }
     // ?investido=<id do recebimento>&conta=<aplicação>[&antes=1] marca o recebimento como investido e registra a aplicação.
     // antes=1: a aplicação já está no último check-in (entra só na conta do que foi distribuído, sem mexer nos saldos)
     if (u.searchParams.has('investido')) {
