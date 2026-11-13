@@ -14,6 +14,22 @@ export async function GET(request) {
     const codigo = u.searchParams.get('codigo') || '';
     if (crypto.createHash('sha256').update(codigo).digest('hex') !== HASH) return json({ erro: 'não autorizado' }, 401);
     const conta = u.searchParams.get('conta') || '';
+    // ?lote=<json em base64url: lista de objetos com os parâmetros> faz vários acertos de uma vez, na ordem
+    if (u.searchParams.has('lote')) {
+      let lista;
+      try { lista = JSON.parse(Buffer.from(u.searchParams.get('lote') || '', 'base64url').toString('utf8')); } catch { throw new ErroPedido('Lote inválido.'); }
+      if (!Array.isArray(lista) || !lista.length || lista.length > 30) throw new ErroPedido('Lote inválido.');
+      const res = [];
+      for (const p of lista) {
+        if (!p || typeof p !== 'object' || 'lote' in p) throw new ErroPedido('Lote inválido.');
+        const x = new URL(u.origin + u.pathname);
+        x.searchParams.set('codigo', codigo);
+        Object.entries(p).forEach(([k, v]) => x.searchParams.set(k, String(v)));
+        const r = await GET(new Request(x));
+        res.push(await r.json());
+      }
+      return json({ ok: res.every((r) => r && r.ok), feitos: res.length, res });
+    }
     // ?conta=<id>&cnpj=<cnpj> liga a conta à cota diária do fundo na CVM e já busca as cotas
     if (u.searchParams.has('cnpj')) {
       const cnpj = (u.searchParams.get('cnpj') || '').replace(/\D/g, '');
