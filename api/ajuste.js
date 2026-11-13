@@ -69,6 +69,33 @@ export async function GET(request) {
       });
       return json({ ok: true, conta, criada });
     }
+    // ?investido=<id do recebimento>&conta=<aplicação>[&antes=1] marca o recebimento como investido e registra a aplicação.
+    // antes=1: a aplicação já está no último check-in (entra só na conta do que foi distribuído, sem mexer nos saldos)
+    if (u.searchParams.has('investido')) {
+      const rid = u.searchParams.get('investido') || '';
+      let res = null;
+      await alterar((e) => {
+        const rec = e.cols.recebimentos && e.cols.recebimentos[rid];
+        const c = ((e.cols.config && e.cols.config.main && e.cols.config.main.contas) || []).find((x) => x.id === conta);
+        if (!rec || !c) return;
+        const agora = new Date().toISOString();
+        rec.investido = true;
+        rec.investidoEm = rec.investidoEm || rec.data;
+        rec.atualizadoEm = agora;
+        e.cols.aportes = e.cols.aportes || {};
+        if (Object.values(e.cols.aportes).some((a) => a && a.recebId === rid)) { res = { ja: true }; return; }
+        let criadoEm = agora;
+        if (u.searchParams.has('antes')) {
+          const ck = (e.cols.checkins || {})[rec.data];
+          if (ck && ck.salvoEm) criadoEm = new Date(new Date(ck.salvoEm).getTime() - 1000).toISOString();
+        }
+        const ap = { data: rec.data, valor: Number(rec.investir) || 0, contaId: conta, moeda: c.moeda || 'BRL', criadoEm, origem: 'receb', recebId: rid };
+        e.cols.aportes['rc' + rid] = ap;
+        res = ap;
+      });
+      if (!res) throw new ErroPedido('Recebimento ou conta não encontrados.', 404);
+      return json({ ok: true, aporte: res });
+    }
     // ?conta=<id>&fora=1 tira a conta da rentabilidade (ex.: reserva de emergência); fora=0 volta
     if (u.searchParams.has('fora')) {
       const fora = u.searchParams.get('fora') === '1';

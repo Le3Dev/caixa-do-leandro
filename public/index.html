@@ -633,7 +633,7 @@
       <label class="field" for="rc-mim">Quanto fica com você deste valor
         <span class="input" id="rc-mim-box"><em>R$</em><input id="rc-mim" type="text" inputmode="decimal" autocomplete="off"></span>
       </label>
-      <label class="check" for="rc-investido"><input type="checkbox" id="rc-investido"> Já investi a parte do investimento</label>
+      <label class="check" for="rc-investido"><input type="checkbox" id="rc-investido"> Já investi a parte do investimento <small class="hint">(vai para a reserva de emergência)</small></label>
       <p class="err" id="rc-erro" hidden></p>
       <div class="actions">
         <button class="btn-primary" id="rc-salvar" type="button">Salvar</button>
@@ -2175,6 +2175,22 @@
     return r2(Math.max(0, marcado - aplicado));
   }
 
+  /* Marcar um recebimento como investido já coloca a parte de investir na reserva (enquanto ela não bateu a meta):
+     o dinheiro sai da conta corrente e entra lá, sem precisar distribuir depois. Desmarcar desfaz. */
+  async function aplicarRecebimento(rec, investido) {
+    const ligados = S.aportes.filter((a) => a.recebId === rec.id);
+    if (!investido) { for (const a of ligados) await S.db.doc('aportes/' + a.id).delete(); return null; }
+    if (ligados.length) return null;
+    const valor = r2(Number(rec.investir) || 0);
+    const rc = reservaCfg();
+    if (!(valor > 0) || !rc.conta || rc.conta.moeda === 'USD') return null;
+    const e = estimativa(hojeISO());
+    const pr = e ? projReserva(e) : null;
+    if (pr && pr.batida) return null;
+    await S.db.collection('aportes').doc().set({ data: hojeISO() > rec.data ? hojeISO() : rec.data, valor, contaId: rc.contaId, moeda: 'BRL', criadoEm: new Date().toISOString(), origem: 'receb', recebId: rec.id });
+    return { conta: rc.conta, valor };
+  }
+
   /* ---------- utilidades de tela ---------- */
   let toastTimer = null;
   function toast(msg) {
@@ -3058,12 +3074,19 @@
     btn.disabled = true;
     try {
       const ref = S.form.editId ? S.db.doc('recebimentos/' + S.form.editId) : S.db.collection('recebimentos').doc();
+      const antes = S.form.editId ? S.receb.find((r) => r.id === S.form.editId) : null;
       await ref.set(doc);
+      let ap = null;
+      if (!!(antes && antes.investido) !== investido || (investido && antes && Number(antes.investir) !== doc.investir)) {
+        const rec = Object.assign({ id: ref.id }, doc);
+        if (antes && antes.investido) await aplicarRecebimento(rec, false);
+        if (investido) ap = await aplicarRecebimento(rec, true);
+      }
       S.mes = f.mes;
       fecharForm();
       renderMes();
       rolar($('#mes-plano'));
-      toast(doc.investir > 0 ? 'Salvo. Separe ' + R(doc.paraMim) + ' e invista ' + R(doc.investir) + '.' : 'Salvo.');
+      toast(ap ? 'Salvo. ' + R(ap.valor) + ' foi para a reserva (' + ap.conta.nome + ').' : doc.investir > 0 && !investido ? 'Salvo. Separe ' + R(doc.paraMim) + ' e invista ' + R(doc.investir) + '.' : 'Salvo.');
     } catch (e) {
       erro(msgErro(e));
     } finally {
@@ -5314,7 +5337,8 @@
       const novo = !rec.investido;
       try {
         await S.db.doc('recebimentos/' + id).update({ investido: novo, investidoEm: novo ? hojeISO() : null, atualizadoEm: new Date().toISOString() });
-        toast(novo ? 'Marcado. Em Patrimônio, diga em qual aplicação você colocou.' : 'Desmarcado.');
+        const ap = await aplicarRecebimento(rec, novo);
+        toast(ap ? R(ap.valor) + ' foi para a reserva (' + ap.conta.nome + ' · ' + ap.conta.lugar + ').' : novo ? 'Marcado. Em Patrimônio, diga em qual aplicação você colocou.' : 'Desmarcado.');
       } catch (e) { toast(msgErro(e)); }
       finally { btn.disabled = false; }
     }
