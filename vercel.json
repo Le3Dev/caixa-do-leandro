@@ -31,6 +31,10 @@
         {
           "key": "X-Frame-Options",
           "value": "DENY"
+        },
+        {
+          "key": "X-Bastion-Verificacao",
+          "value": "ae8b196124ba7f911abd6c0bceeae11f"
         }
       ]
     },

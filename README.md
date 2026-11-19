@@ -29,6 +29,8 @@ Opcionais: `APP_SECRET` (chave da sessão; sem ela, é derivada da senha) e `CRO
 
 Para conferir a configuração: `https://SEU-DOMINIO/api/estado?diag=1`.
 
+O `vercel.json` envia o cabeçalho `X-Bastion-Verificacao` em todas as rotas e ambientes, só para comprovar a propriedade do domínio; pode ser removido depois da verificação.
+
 ## Cópias automáticas
 Todo dia útil, junto com a atualização do dólar e do CDI, o app grava uma cópia dos dados em
 `caixa/backups/AAAA-MM.json` no Blob (uma por mês, com o último estado do mês). Para restaurar,
